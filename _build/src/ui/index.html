@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>轉檔工廠（試用版）</title><link rel="icon" href="logo.png">
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>四維八德（試用版）</title><link rel="icon" href="logo.png">
 <style>
 :root{
  --blue:#007AFF;--green:#34C759;--red:#FF3B30;--orange:#FF9500;--pink:#FF2D55;--purple:#AF52DE;--indigo:#5856D6;--teal:#30B0C7;--cyan:#32ADE6;--gray:#8E8E93;--brown:#A2845E;
@@ -145,10 +145,38 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
  .sb-head{padding:8px}.nav{min-height:28px}.sb-label{margin-top:10px}.hint2{display:none}
 }
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--fill);border-radius:9px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background-color:var(--tx3)}
+
+/* Motion respects accessibility and stays off layout-critical progress updates. */
+:root{--ease:cubic-bezier(.2,.7,.2,1);--motion:180ms}
+.page.on{animation:pageIn 200ms var(--ease)}
+@keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.btn{transition:background var(--motion),opacity var(--motion),transform 120ms var(--ease),box-shadow var(--motion)}
+.btn:focus-visible,.nav:focus-visible,.sw:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.btn[aria-busy=true]{pointer-events:none;opacity:.7}.btn[aria-busy=true]:before{content:"";width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sw:active{transform:scale(.95)}.nav{transition:background var(--motion),box-shadow var(--motion)}
+.drop{transition:border-color var(--motion),background var(--motion),transform var(--motion)}.drop:hover{border-color:var(--blue)}
+.flow-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px);gap:20px}.flow-grid>div{min-width:0}
+.flow-step{padding:12px;border-bottom:1px solid var(--sep)}.flow-step:last-child{border-bottom:0}
+.flow-step-head{display:flex;gap:8px;align-items:center;margin-bottom:8px}.flow-step-head b{flex:1}
+.flow-step .row{padding:5px 0}.flow-step .val input,.flow-step .val select{max-width:180px}
+.flow-note{padding:12px 14px;background:var(--sel);border-radius:10px;color:var(--tx2);line-height:1.7}
+input[type=password]{background:var(--fill);border:0;border-radius:8px;padding:6px 10px;outline:none}
+.q.partial .prog{display:none}.q.partial{background:rgba(255,149,0,.06)}
+.toast{border-radius:12px;max-width:min(640px,85vw)}
+details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:none}details[open]>summary{color:var(--blue)}
+.drop-key{cursor:pointer}.drop-key:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+#wf_list{max-height:270px;overflow:auto}.flow-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+@media(max-width:1000px){.flow-grid{grid-template-columns:1fr}.flow-step .val input,.flow-step .val select{max-width:200px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}.page.on{animation:none}.btn:active,.sw:active{transform:none}}
+
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.compare-grid figure{margin:0}.compare-grid img{width:100%;max-height:55vh;object-fit:contain;background:var(--fill2);border-radius:10px}.compare-grid figcaption{font-weight:600;margin-bottom:8px}.compare-grid small{display:block;color:var(--tx2);margin-top:6px}
+.file-enter{animation:fileIn 200ms var(--ease)}@keyframes fileIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:700px){.compare-grid{grid-template-columns:1fr}}
 </style></head><body>
 <div class="app">
 <aside class="side">
- <div class="sb-head" id="sbhead" title="關於轉檔工廠"><img src="logo.png" alt=""><div><b>轉檔工廠<span class="trial">試用版</span></b><small>免費使用・沒有期限</small></div></div>
+ <div class="sb-head" id="sbhead" title="關於四維八德"><img src="logo.png" alt=""><div><b>轉檔與電腦工具</b><small>免費使用・沒有期限</small></div></div>
  <label class="search"><svg class="i" data-i="search"></svg><input id="gsearch" placeholder="搜尋工具或格式"></label>
  <div class="sb-scroll" id="nav"></div>
  <div class="sb-foot"><div class="status" id="hwchip"><i></i>偵測顯示卡中…</div>
@@ -157,9 +185,67 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
 <div class="content">
  <div class="bar"><h1 id="ptitle">轉檔</h1><span class="sub" id="psub"></span><div class="tools"><button class="btn plain" id="fmtbtn">支援格式</button></div></div>
  <div style="min-height:0;display:grid">
+
+ <section class="page scroll" id="p-workflow"><div class="col" style="max-width:1000px">
+  <div class="flow-note">選擇交付用途，一次處理素材、產生不同版本並檢查成品。原檔會保留，結果附有交付報告。</div>
+  <div class="flow-grid"><div>
+   <div class="ghead">交付用途</div><div class="group"><div class="row"><select id="wf_recipe" style="width:100%"></select></div><div class="row mute" id="wf_desc"></div></div>
+   <div class="ghead" style="margin-top:18px">素材<span class="r"><button class="btn plain" id="wf_clear">全部移除</button></span></div>
+   <div class="drop drop-key" id="wf_drop" role="button" tabindex="0" aria-label="加入交付素材"><div><h3>拖入檔案或資料夾</h3><p>也可以使用下方按鈕或 Ctrl+O</p></div></div>
+   <div class="flow-actions"><button class="btn tint" id="wf_addf">加入檔案</button><button class="btn tint" id="wf_addd">加入資料夾</button></div>
+   <div class="group" id="wf_list" style="margin-top:10px"></div>
+   <div id="wf_pipeline" style="margin-top:18px;display:none"><div class="ghead">處理步驟 · 依順序執行</div><div class="group" id="wf_steps"></div><div class="flow-actions"><select id="wf_step_tool" style="flex:1"></select><button class="btn tint" id="wf_step_add">加入步驟</button></div><div class="gfoot">每個步驟會使用上一個步驟的結果；合成、分割及光碟工具請使用工具箱。多次影音編碼可能影響畫質。</div></div>
+  </div><div>
+   <div class="ghead">交付規格</div><div class="group">
+    <div class="row"><label class="lab" for="wf_prefix">客戶／專案前綴</label><span class="val"><input id="wf_prefix" placeholder="例如 春季新品" style="width:180px"></span></div>
+    <div class="row"><label class="lab" for="wf_quality">品質</label><span class="val"><select id="wf_quality" style="width:150px"><option value="balanced">均衡</option><option value="high">高品質</option><option value="small">小檔案</option></select></span></div>
+    <div class="row wf-share"><label class="lab" for="wf_max">每個檔案上限</label><span class="val"><input id="wf_max" type="number" min="0.01" step="1" value="20" style="width:90px">MB</span></div>
+    <div class="row wf-product"><label class="lab" for="wf_size">方形圖片邊長</label><span class="val"><input id="wf_size" type="number" min="100" max="4000" value="1200" style="width:90px">px</span></div>
+    <div class="row wf-brand"><label class="lab" for="wf_watermark">文字浮水印</label><span class="val"><input id="wf_watermark" placeholder="選填" style="width:180px"></span></div>
+    <div class="row wf-brand"><span class="lab">品牌 Logo<small id="wf_logo_label">未選擇</small></span><button class="btn tint" id="wf_logo">選擇</button><button class="btn plain" id="wf_logo_clear" aria-label="清除 Logo">清除</button></div>
+    <div class="row"><span class="lab">儲存位置<small id="wf_out_label">原資料夾內的新交付包</small></span><button class="btn tint" id="wf_out">選擇</button><button class="btn plain" id="wf_out_clear" aria-label="使用預設儲存位置">預設</button></div>
+   </div>
+   <details id="wf_video_options"><summary>影片規格、字幕與檢查</summary><div class="group"><div class="row"><label class="lab" for="wf_video_size">分享版本尺寸<small>原比例版本保留原始尺寸</small></label><span class="val"><select id="wf_video_size" style="width:160px"><option value="480">480 · 省資源</option><option value="720" selected>720 · 均衡</option><option value="1080">1080 · 高解析度</option></select></span></div>
+    <div class="row"><span class="lab">字幕檔<small id="wf_sub_label">選填 · 可燒入所有影片版本</small></span><button class="btn tint" id="wf_sub">選擇</button><button class="btn plain" id="wf_sub_clear">清除</button></div>
+    <div class="row"><label class="lab" for="wf_autosub">AI 自動字幕<small>初次使用可能需要下載模型</small></label><input id="wf_autosub" type="checkbox"></div>
+    <div class="row"><label class="lab" for="wf_model">辨識模型</label><span class="val"><select id="wf_model" style="width:160px"><option value="base">快速</option><option value="small">準確</option><option value="medium">最準</option></select></span></div>
+   </div></details>
+   <details><summary>打包與檢查</summary><div class="group">
+    <div class="row"><label class="lab" for="wf_zip">另產生 ZIP 交付檔案</label><input id="wf_zip" type="checkbox" checked></div>
+    <div class="row"><label class="lab" for="wf_total">ZIP 整包容量上限<small>0 表示不限；超標會明確提示</small></label><span class="val"><input id="wf_total" type="number" min="0" value="0" style="width:80px">MB</span></div>
+    <div class="row"><label class="lab" for="wf_verify">完整影音解碼檢查<small>較慢，可檢查全片解碼錯誤</small></label><input id="wf_verify" type="checkbox"></div>
+   </div></details>
+   <div style="margin-top:18px"><button class="btn pri lg" id="wf_go">建立交付包</button><div class="hint2" id="wf_hint">Ctrl+Enter 開始</div></div>
+   <details><summary>保存與分享配方</summary><div class="group"><div class="row"><select id="wf_profiles" style="width:100%"><option value="">選擇已保存配方</option></select></div><div class="row"><input id="wf_name" placeholder="配方名稱，例如 客戶A商品圖" style="width:100%"></div></div><div class="flow-actions"><button class="btn tint" id="wf_save">保存配方</button><button class="btn plain" id="wf_export">匯出</button><button class="btn plain" id="wf_import">匯入</button><button class="btn plain danger" id="wf_delete">刪除</button></div><div class="gfoot">密碼不會保存或匯出。使用 Logo 或字幕檔的配方，需要同事另行選擇檔案。</div></details>
+  </div></div>
+ </div></section>
+
+ <section class="page scroll" id="p-system"><div class="col" style="max-width:900px">
+  <div class="flow-note">查看電腦規格，做短時間功能測試，或先預覽再清理暫存。測試會短暫使用處理器，並在測試資料夾寫入 16 MB 後刪除測試檔。</div>
+  <div><div class="ghead">電腦硬體<span class="r"><button class="btn plain" id="sys_refresh">重新讀取</button></span></div><div class="group" id="sys_info"><div class="empty">正在讀取硬體資訊…</div></div></div>
+  <div><button class="btn pri" id="sys_test">開始硬體短測</button><div class="gfoot">CPU、16 MB 記憶體一致性、磁碟讀寫、GPU／CPU 影音編碼。結果會出現在下方佇列，可開啟報告。短測不等於完整硬碟健康、溫度或整部記憶體檢查。</div></div>
+  <div><div class="ghead">清理範圍</div><div class="group" id="sys_categories"></div><div class="gfoot">保留文件、照片、下載成品、設定與已完成 AI 模型。清理時跳過已變動或正在使用的檔案；不清理登錄檔。</div></div>
+  <div><button class="btn tint" id="sys_scan">掃描可清理項目</button><div class="group" id="sys_preview" style="margin-top:12px"><div class="empty">先掃描，確認項目與空間後再清理</div></div><button class="btn danger" id="sys_clean" disabled style="margin-top:10px">清理掃描項目</button></div>
+ </div></section>
+
+ <section class="page scroll" id="p-disk"><div class="col">
+  <div class="flow-note">檔案救援請先停止在來源磁碟寫入新資料。檔案系統修復會修改磁碟，請先備份或救援重要資料；實體故障無法靠這些工具保證修好。</div>
+  <div><div class="ghead">磁碟操作<span class="r"><button class="btn plain" id="disk_refresh">重新讀取</button></span></div><div class="group">
+   <div class="row"><label class="lab" for="disk_mode">用途</label><span class="val"><select id="disk_mode"><option value="check">檢查檔案系統（不修復）</option><option value="repair">修復檔案系統</option><option value="recovery">救援刪除／遺失檔案</option></select></span></div>
+   <div class="row"><label class="lab" for="disk_source">來源磁碟</label><span class="val"><select id="disk_source"></select></span></div>
+   <div class="row disk-recovery"><label class="lab" for="disk_dest">恢復資料存到</label><span class="val"><select id="disk_dest"></select></span></div>
+   <div class="row disk-recovery"><label class="lab" for="disk_recovery_mode">救援方式</label><span class="val"><select id="disk_recovery_mode"><option value="regular">一般 · 最近刪除的 NTFS 檔案</option><option value="extensive">深入 · 格式化、較早刪除、其他格式</option></select></span></div>
+   <div class="row disk-recovery"><label class="lab" for="disk_group">檔案類型</label><span class="val"><select id="disk_group"><option value="documents">文件</option><option value="photos">照片</option><option value="video">影片</option><option value="all">所有類型</option></select></span></div>
+  </div><div class="gfoot" id="disk_dependency"></div></div>
+  <div class="flow-actions"><button class="btn tint" id="disk_preview_btn">預覽這次操作</button><button class="btn plain" id="disk_help_btn">Microsoft 官方說明</button></div>
+  <div class="group" id="disk_plan"><div class="empty">選擇磁碟與用途，預覽操作後再開始</div></div>
+  <div class="group"><div class="row"><label class="lab" for="disk_ack">我已確認來源、目的地及備份安排<small>修復會修改磁碟；救援結果會寫入另一磁碟</small></label><input id="disk_ack" type="checkbox"></div></div>
+  <button class="btn pri lg" id="disk_launch" disabled>確認後開啟 Windows 工具</button>
+  <div class="gfoot">會另外開啟需要系統管理員權限的 Windows 工具視窗。來源磁碟不會自動格式化，不使用強制卸載或全磁碟壞軌掃描。修復若需重新啟動，會由 Windows 工具詢問，不會自動重新啟動電腦。</div>
+ </div></section>
  <!-- convert -->
  <section class="page" id="p-convert"><div class="cmain">
-  <div class="drop" id="drop"><img src="logo.png" alt=""><div><h3>將檔案或資料夾拖到這裡</h3><p>自動判斷類型並建議最適合的格式。也可以把檔案拖到轉檔工廠的圖示上。</p></div>
+  <div class="drop" id="drop"><img src="logo.png" alt=""><div><h3>將檔案或資料夾拖到這裡</h3><p>自動判斷類型並建議最適合的格式。也可以把檔案拖到四維八德的圖示上。</p></div>
    <div class="act"><button class="btn tint" id="addf">加入檔案</button><button class="btn tint" id="addd">加入資料夾</button></div></div>
   <div class="list"><div class="ghead">待轉檔案<span class="r"><button class="btn plain" id="clr">全部移除</button></span></div><div class="group" id="files"></div></div>
  </div>
@@ -175,6 +261,7 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
    <div class="row"><span class="lab">硬體加速</span><div class="sw" id="hw"></div></div>
    <div class="row" title="格式相容時直接換封裝，速度快上百倍且畫質零損失"><span class="lab">盡量不重新編碼</span><div class="sw" id="fastcopy"></div></div>
    <div class="row" title="把音量調整到一致的響度（-16 LUFS）"><span class="lab">音量標準化</span><div class="sw" id="loudnorm"></div></div></div></div>
+  <details><summary>編碼與檢查</summary><div class="group"><div class="row"><label class="lab" for="resource_mode">效能模式</label><span class="val"><select id="resource_mode" style="width:130px"><option value="auto">依電腦規格調整</option><option value="quiet">省資源</option></select></span></div><div class="row"><label class="lab" for="codec">影片編碼</label><span class="val"><select id="codec" style="width:130px"><option value="auto">自動／相容優先</option><option value="h264">H.264</option><option value="hevc">H.265／HEVC</option><option value="av1">AV1</option></select></span></div><div class="row"><label class="lab" for="verify_full">完整解碼檢查</label><input type="checkbox" id="verify_full"></div></div><div class="gfoot">HEVC／AV1 用於 MP4、MKV、MOV 的重新編碼，目前使用 CPU，較慢。</div></details>
   <div><div class="ghead">儲存位置</div><div class="seg" id="outmode"><button data-v="source">原資料夾</button><button data-v="custom">指定資料夾</button></div>
    <div class="gfoot" id="outdir" style="cursor:pointer;word-break:break-all"></div></div>
   <div class="stick"><button class="btn pri lg" id="go" title="Ctrl+Enter">開始轉檔</button><div class="hint2" id="gohint"></div></div>
@@ -217,7 +304,7 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
  <section class="page scroll" id="p-auto"><div class="col">
   <div><div class="ghead">監控資料夾<span class="r"><button class="btn plain" id="w_add"><svg class="i" data-i="plus"></svg>加入資料夾</button></span></div>
    <div class="group" id="w_rows"></div>
-   <div class="gfoot">放進資料夾的新檔案會自動轉檔，結果存在該資料夾的「已轉檔」裡，原檔不會被移動或刪除。檔案複製完成後才會開始，轉檔工廠開著時才會運作。</div></div>
+   <div class="gfoot">放進資料夾的新檔案會自動轉檔，結果存在該資料夾的「已轉檔」裡，原檔不會被移動或刪除。檔案複製完成後才會開始，四維八德開著時才會運作。</div></div>
   <div><div class="ghead">全部完成後</div><div class="seg" id="finish"><button data-v="none">不做事</button><button data-v="sound">提示音</button><button data-v="open">開啟資料夾</button><button data-v="sleep">睡眠</button><button data-v="shutdown">關機</button></div>
    <div class="gfoot">選「關機」會在完成後倒數 2 分鐘，期間可以取消。睡眠與關機只執行一次，之後自動改回提示音。</div></div>
  </div></section>
@@ -234,7 +321,7 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
 <div style="text-align:center"><div class="stage" id="stage"><img id="simg" draggable="false"><div class="selbox" id="sel" style="display:none"></div></div></div>
 <div style="display:flex;gap:10px;align-items:center;margin-top:14px"><input type="range" id="stime" min="0" max="1000" value="300" style="flex:1"><span class="mute small" id="stimel" style="min-width:70px"></span>
 <button class="btn" id="rcancel">取消</button><button class="btn pri" id="rok">完成</button></div></div></div>
-<div class="modal" id="amodal"><div class="sheet about"><img src="logo.png" alt=""><h2>轉檔工廠</h2><div class="mute small" id="aver"></div>
+<div class="modal" id="amodal"><div class="sheet about"><img src="logo.png" alt=""><h2>四維八德</h2><div class="mute small" id="aver"></div><p id="specnote" class="small">Windows 10／11 64 位元 · 依記憶體調整工作數。建議至少 4 GB RAM；4K 與大型 AI 模型建議 8–16 GB。</p>
 <div class="ed" id="aed">試用版</div>
 <p id="awel" style="display:none;color:var(--tx);font-weight:600">歡迎使用！</p>
 <p>這是<b>試用版</b>，但<b>完全免費</b>、<b>沒有使用期限</b>，<br>所有功能都能使用，也不會跳出付費提醒。</p>
@@ -243,7 +330,8 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
 <button class="btn pri lg" id="aok" style="margin-top:16px">開始使用</button></div></div>
 <div class="toast" id="toast"></div>
 <div class="dropov" id="dropov"><div class="box"><svg class="i" data-i="download"></svg><b id="dropt">放開以加入檔案</b><span id="drops"></span></div></div>
-<script>
+<div class="modal" id="comparemodal" role="dialog" aria-modal="true" aria-labelledby="comparetitle"><div class="sheet"><h3 id="comparetitle">轉檔前後預覽<span class="r"><button class="btn plain" id="compareclose">完成</button></span></h3><div class="compare-grid"><figure><figcaption>原始素材</figcaption><img id="comparebefore" alt="原始素材預覽"><small id="comparebeforeinfo"></small></figure><figure><figcaption>輸出成品</figcaption><img id="compareafter" alt="輸出成品預覽"><small id="compareafterinfo"></small></figure></div><p class="gfoot" id="comparecheck"></p><p class="gfoot">影片顯示各自約 30% 時間位置的畫面；預覽供人工檢查，不代表全片品質評分。</p></div></div>
+<div class="modal" id="cleanmodal" role="dialog" aria-modal="true" aria-labelledby="cleantitle"><div class="sheet" style="max-width:500px"><h3 id="cleantitle">確認清理暫存</h3><p id="cleanreview"></p><p class="mute">此操作會刪除掃描到的暫存檔，無法透過復原按鈕還原。你可以取消並調整清理範圍。</p><div class="flow-actions"><button class="btn tint" id="clean_cancel">取消</button><button class="btn danger" id="clean_confirm">確認清理</button></div></div></div><script>
 /* ---------- icons (24px line set) ---------- */
 const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',plus:'<path d="M12 5v14M5 12h14"/>',x:'<path d="M18 6 6 18M6 6l12 12"/>',
 chev:'<path d="m9 6 6 6-6 6"/>',chevdown:'<path d="m6 9 6 6 6-6"/>',up:'<path d="m6 15 6-6 6 6"/>',down:'<path d="m6 9 6 6 6-6"/>',
@@ -283,8 +371,8 @@ table:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h1
 cc:'<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10 10.2a2.5 2.5 0 1 0 0 3.6M17 10.2a2.5 2.5 0 1 0 0 3.6"/>',show:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m10 12 4 0M12 10l2 2-2 2"/>'};
 const svg=(k,cls='i')=>`<svg class="${cls}" viewBox="0 0 24 24">${IC[k]||IC.doc}</svg>`;
 document.querySelectorAll('svg[data-i]').forEach(s=>{s.setAttribute('viewBox','0 0 24 24');s.innerHTML=IC[s.dataset.i]});
-const GC={convert:'var(--blue)',video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',other:'var(--teal)',disc:'var(--brown)',rec:'var(--red)',dl:'var(--cyan)',auto:'var(--gray)'};
-const GI={convert:'convert',video:'video',audio:'audio',image:'image',pdf:'pdf',other:'shield',disc:'disc',rec:'record',dl:'download',auto:'bolt'};
+const GC={disk:'var(--brown)',system:'var(--gray)',workflow:'var(--teal)',convert:'var(--blue)',video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',other:'var(--teal)',disc:'var(--brown)',rec:'var(--red)',dl:'var(--cyan)',auto:'var(--gray)'};
+const GI={disk:'disc',system:'sliders',workflow:'folder',convert:'convert',video:'video',audio:'audio',image:'image',pdf:'pdf',other:'shield',disc:'disc',rec:'record',dl:'download',auto:'bolt'};
 const tile=(icon,color,size='')=>`<span class="tile ${size}" style="background:${color}">${svg(icon)}</span>`;
 /* ---------- state ---------- */
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let PC={},S={},files=[],API,TS=null,tool=null,tfiles=[],TV={},group='video';
@@ -296,37 +384,37 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmtSize=b=>b>1<<30?(b/(1<<30)).toFixed(1)+' GB':b>1<<20?(b/(1<<20)).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
 const fmtDur=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`};
 const MI={};async function loadInfo(list,cb){const need=list.filter(f=>(f.cat=='video'||f.cat=='audio')&&!(f.path in MI)).map(f=>f.path);if(!need.length||!API)return;need.forEach(p=>MI[p]=null);
- const r=await API.media_info(need);Object.assign(MI,r);cb()}
+ try{for(let i=0;i<need.length;i+=60){const r=await API.media_info(need.slice(i,i+60));Object.assign(MI,r);cb()}}catch(e){need.filter(p=>MI[p]===null).forEach(p=>delete MI[p]);toast('部分媒體資訊無法讀取',1)}}
 const miText=p=>{const m=MI[p];if(!m)return'';const q=m.h?(m.h>=2160?'4K':m.h>=1440?'1440p':m.h>=1080?'1080p':m.h>=720?'720p':m.h+'p'):'';return [q,m.dur?fmtDur(m.dur):'',m.hdr?'HDR':''].filter(Boolean).join(' · ')};
 const fmtT=s=>s==null?'':s<60?s+' 秒':s<3600?Math.floor(s/60)+' 分 '+(s%60)+' 秒':Math.floor(s/3600)+' 小時 '+Math.floor(s%3600/60)+' 分';
 function toast(m,err,act){const t=$('#toast');t.innerHTML=esc(m)+(act?`<button class="btn tint">${esc(act[0])}</button>`:'');t.className='toast on'+(err?' err':'')+(act?' act':'');if(act)t.querySelector('button').onclick=()=>{t.className='toast';act[1]()};clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',act?7000:err?5000:2400)}
 async function call(fn,...a){try{return await API[fn](...a)}catch(e){toast(String(e.message||e).replace(/^.*?Error:\s*/,''),1);throw e}}
-function save(){API&&API.save_settings(S)}
+let saveTimer;function save(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{if(API)call('save_settings',S).catch(()=>{})},250)}
 function setSeg(id,v){$$(id+' button').forEach(b=>b.classList.toggle('on',b.dataset.v==v))}
 const mq=matchMedia('(prefers-color-scheme: dark)');
 function theme(){const t=S.theme||'auto';document.body.classList.toggle('dark',t=='dark'||(t=='auto'&&mq.matches));setSeg('#theme',t)}
 mq.addEventListener('change',theme);$('#theme').onclick=e=>{const v=e.target.dataset.v;if(v){S.theme=v;theme();save()}};
 const sw=(id,on)=>$('#'+id).classList.toggle('on',!!on),isOn=id=>$('#'+id).classList.contains('on');
 /* ---------- navigation ---------- */
-const PAGES={convert:['轉檔','把任何檔案轉成需要的格式'],rec:['螢幕錄影','錄下整個螢幕或指定範圍'],dl:['下載影片','從網站下載影片或音樂'],auto:['自動化','監控資料夾與完成後動作']};
+const PAGES={disk:['磁碟檢查與救援','預覽操作後交由 Windows 工具執行'],system:['電腦工具','硬體資訊、短測與暫存清理'],workflow:['交付工作台','選用途，拿到可交付的成品包'],convert:['轉檔','把任何檔案轉成需要的格式'],rec:['螢幕錄影','錄下整個螢幕或指定範圍'],dl:['下載影片','從網站下載影片或音樂'],auto:['自動化','監控資料夾與完成後動作']};
 function navHTML(){if(!TS)return'';const it=(k,name,extra='')=>`<div class="nav ${S.tab==k?'on':''}" data-k="${k}" title="${name}">${tile(GI[k],GC[k])}<span>${name}</span>${extra}</div>`;
  const cnt=g=>TS.tools.filter(t=>t.group==g).length;
- return it('convert','轉檔')+'<div class="sb-label">工具</div>'+TS.groups.map(([g,n])=>it(g,n.replace('工具',''),`<span class="cnt">${cnt(g)}</span>`)).join('')
-  +'<div class="sb-label">更多</div>'+it('rec','螢幕錄影','<i class="live" id="recdot"></i>')+it('dl','下載影片')+it('auto','自動化')}
+ return it('workflow','交付工作台')+it('convert','一般轉檔')+'<div class="sb-label">工具</div>'+TS.groups.map(([g,n])=>it(g,n.replace('工具',''),`<span class="cnt">${cnt(g)}</span>`)).join('')
+  +'<div class="sb-label">更多</div>'+it('rec','螢幕錄影','<i class="live" id="recdot"></i>')+it('dl','下載影片')+it('auto','自動化')+it('system','電腦工具')+it('disk','磁碟檢查與救援')}
 function renderNav(){$('#nav').innerHTML=navHTML();recUI()}
 $('#nav').onclick=e=>{const n=e.target.closest('.nav');if(n){$('#gsearch').value='';go(n.dataset.k)}};
 function go(k){S.tab=k;const isTool=TS.groups.some(g=>g[0]==k)||k=='search';$$('.page').forEach(p=>p.classList.remove('on'));
  if(isTool){group=k;$('#p-tools').classList.add('on');const gn=k=='search'?['搜尋結果','']:TS.groups.find(g=>g[0]==k);$('#ptitle').textContent=k=='search'?'搜尋結果':gn[1];$('#psub').textContent=k=='search'?'':`${TS.tools.filter(t=>t.group==k).length} 個工具`;renderTList();
   const want=(S.tool_by_group||{})[k];const list=visibleTools();pickTool(list.some(t=>t.id==want)?want:(list[0]||{}).id)}
- else{$('#p-'+k).classList.add('on');$('#ptitle').textContent=PAGES[k][0];$('#psub').textContent=PAGES[k][1];if(k=='rec')recInit();if(k=='auto')autoInit()}
+ else{$('#p-'+k).classList.add('on');$('#ptitle').textContent=PAGES[k][0];$('#psub').textContent=PAGES[k][1];if(k=='rec')recInit();if(k=='auto')autoInit();if(k=='system')systemInit();if(k=='disk')diskInit()}
  renderNav();if(k!='search')save()}
 $('#gsearch').oninput=e=>{const q=e.target.value.trim();if(q){S.tab='search';go('search')}else go(group=='search'?'video':group)};
 function visibleTools(){const q=$('#gsearch').value.trim().toLowerCase();return group=='search'?TS.tools.filter(t=>(t.name+t.desc).toLowerCase().includes(q)):TS.tools.filter(t=>t.group==group)}
 /* ---------- convert ---------- */
-function addFiles(list){const have=new Set(files.map(f=>f.path));let n=0;list.forEach(f=>{if(!have.has(f.path)){f.target=f.suggest;files.push(f);n++}});render();if(list.length&&!n)toast('這些檔案已經在清單裡了')}
-window.onDropped=(list,raw)=>{if($('#p-tools').classList.contains('on')&&tool)addToolFiles(raw);else{if(S.tab!='convert')go('convert');addFiles(list);if(!list.length)toast('沒有可以轉換的檔案',1)}};
+function addFiles(list){const have=new Set(files.map(f=>f.path));let n=0;list.forEach(f=>{if(!have.has(f.path)){f.target=f.suggest;files.push(f);have.add(f.path);n++}});render();if(list.length&&!n)toast('這些檔案已經在清單裡了')}
+window.onDropped=(list,raw)=>{if($('#p-tools').classList.contains('on')&&tool)addToolFiles(raw);else{if(S.tab=='workflow'){wfAdd(list);return}if(S.tab!='convert')go('convert');addFiles(list);if(!list.length)toast('沒有可以轉換的檔案',1)}};
 function render(){const el=$('#files');
- el.innerHTML=files.length?files.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'doc',CATC[f.cat]||'var(--gray)','md')}<span class="lab"><span class="nm" title="${esc(f.path)}" style="display:block">${esc(f.name)}</span><small>${CAT[f.cat]||''} · ${fmtSize(f.size)}${miText(f.path)?' · '+miText(f.path):''}${f.note?' · <span class="warn">'+esc(f.note)+'</span>':''}</small></span>
+ el.innerHTML=files.length?files.slice(0,200).map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'doc',CATC[f.cat]||'var(--gray)','md')}<span class="lab"><span class="nm" title="${esc(f.path)}" style="display:block">${esc(f.name)}</span><small>${CAT[f.cat]||''} · ${fmtSize(f.size)}${miText(f.path)?' · '+miText(f.path):''}${f.note?' · <span class="warn">'+esc(f.note)+'</span>':''}</small></span>
   <span class="val">${f.targets.length?`<span class="mute small">轉成</span><select data-i="${i}" style="width:110px">${f.targets.map(t=>`<option ${t==f.target?'selected':''} value="${t}">${TL(t)}</option>`).join('')}</select>`:`<span class="warn small">${f.note?'不支援':'缺少元件'}</span>`}
   <button class="btn icon" data-r="${i}" title="移除">${svg('x')}</button></span></div>`).join(''):'<div class="empty">還沒有加入檔案</div>';
  const all=new Set();files.forEach(f=>f.targets.forEach(t=>all.add(t)));$('#alltarget').innerHTML='<option value="">每個檔案用建議格式</option>'+[...all].map(t=>`<option value="${t}">全部轉成 ${TL(t)}</option>`).join('');
@@ -343,7 +431,7 @@ document.addEventListener('dragleave',e=>{e.preventDefault();if(--dragN<=0){drag
 document.addEventListener('drop',e=>{e.preventDefault();dragN=0;ov.classList.remove('on')});
 $('#addf').onclick=async()=>addFiles(await call('pick_files'));$('#addf').title='Ctrl+O';
 $('#addd').onclick=async()=>{const r=await call('pick_folder','add');if(r)addFiles(r)};
-$('#clr').onclick=()=>{files=[];render()};
+$('#clr').onclick=()=>{const old=files;files=[];render();if(old.length)toast('已移除檔案',false,['復原',()=>{files=old;render()}])};
 const PD={high:'畫質優先，檔案較大；適合保存與剪輯。',balanced:'畫質與大小兼顧，大部分情況建議用這個。',small:'檔案最小，適合傳訊息、寄信；畫質略降。'};
 function presetUI(){setSeg('#preset',S.preset);$('#presetdesc').textContent=PD[S.preset]||''}
 $('#preset').onclick=e=>{if(e.target.dataset.v){S.preset=e.target.dataset.v;presetUI();save()}};
@@ -351,10 +439,10 @@ $('#outmode').onclick=async e=>{const v=e.target.dataset.v;if(!v)return;if(v=='c
 $('#outdir').onclick=()=>$('#outmode button[data-v=custom]').click();
 function outUI(){setSeg('#outmode',S.out_mode);$('#outdir').innerHTML=S.out_mode=='custom'?esc(S.out_dir)+'　<span style="color:var(--blue)">更換…</span>':'存在原檔案旁邊，永遠不會覆蓋原檔。'}
 ['merge','hw','fastcopy','loudnorm'].forEach(id=>$('#'+id).onclick=()=>{$('#'+id).classList.toggle('on');const k={hw:'hwaccel',fastcopy:'fastcopy',loudnorm:'loudnorm'}[id];if(k){S[k]=isOn(id);save()}});
-$('#go').onclick=async()=>{const opt={preset:S.preset,target_mb:$('#tmb').value,trim_start:$('#ts').value,trim_end:$('#te').value,height:$('#h').value,hwaccel:S.hwaccel,fastcopy:S.fastcopy,loudnorm:S.loudnorm,out_dir:S.out_mode=='custom'?S.out_dir:''};
+$('#go').onclick=async()=>{const opt={preset:S.preset,target_mb:$('#tmb').value,trim_start:$('#ts').value,trim_end:$('#te').value,height:$('#h').value,hwaccel:S.hwaccel,fastcopy:S.fastcopy,loudnorm:S.loudnorm,out_dir:S.out_mode=='custom'?S.out_dir:'',codec:S.codec||'auto',verify_full:!!S.verify_full,resource_mode:S.resource_mode||'auto'};
  const items=files.filter(f=>f.target&&f.targets.length).map(f=>({path:f.path,target:f.target}));await call('start',items,opt,isOn('merge'));toast(`已加入 ${items.length} 個工作`);files=[];render();poll()};
 /* ---------- activity ---------- */
-$('#queue').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.c)API.cancel(b.dataset.c);if(b.dataset.o)API.reveal(b.dataset.o);if(b.dataset.f)API.open_file(b.dataset.f);
+$('#queue').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.preview)waiting(b,async()=>{const r=await call('compare_job',b.dataset.preview);$('#comparebefore').src=r.before.src;$('#compareafter').src=r.after.src;$('#comparebeforeinfo').textContent=r.before.w+' × '+r.before.h;$('#compareafterinfo').textContent=r.after.w+' × '+r.after.h;$('#comparecheck').textContent=r.validation;$('#comparemodal').classList.add('on');$('#compareclose').focus()});if(b.dataset.c)call('cancel',b.dataset.c).catch(()=>{});if(b.dataset.o)API.reveal(b.dataset.o);if(b.dataset.f)API.open_file(b.dataset.f);
  if(b.dataset.rt){await call('retry',b.dataset.rt);lastQ='';poll()}};
 $('#queue').ondblclick=e=>{const b=e.target.closest('.q');const f=b&&b.querySelector('[data-f]');if(f)API.open_file(f.dataset.f)};
 function sizeDelta(j){if(!j.out_size||!j.in_size||j.kind=='rec'||j.kind=='dl')return j.out_size&&j.kind?fmtSize(j.out_size)+'　':'';const d=(j.out_size-j.in_size)/j.in_size;
@@ -368,27 +456,27 @@ $('#amin').onclick=()=>{$('#activity').classList.toggle('min');S.qmin=$('#activi
 $('#finsel').onchange=e=>{S.finish=e.target.value;setSeg('#finish',S.finish);save();if(S.finish=='shutdown')toast('全部完成後會倒數 2 分鐘關機')};
 $('#finish').onclick=e=>{const v=e.target.dataset.v;if(v){S.finish=v;setSeg('#finish',v);$('#finsel').value=v;save()}};
 $('#noshut').onclick=async()=>{await API.cancel_shutdown();toast('已取消關機')};
-const SN={queued:'等待中',running:'處理中',done:'完成',error:'失敗',cancelled:'已取消'};
-const KC=j=>j.kind=='rec'?['record','var(--red)']:j.kind=='dl'?['download','var(--cyan)']:j.kind?[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).icon||'sliders',GC[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).group]||'var(--gray)']:['convert','var(--blue)'];
+const SN={partial:'部分完成',queued:'等待中',running:'處理中',done:'完成',error:'失敗',cancelled:'已取消'};
+const KC=j=>j.kind=='hardware_test'?['sliders','var(--gray)']:j.kind=='workflow'?['folder','var(--teal)']:j.kind=='rec'?['record','var(--red)']:j.kind=='dl'?['download','var(--cyan)']:j.kind?[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).icon||'sliders',GC[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).group]||'var(--gray)']:['convert','var(--blue)'];
 let lastQ='',busy=false,recState={},seen={},wasBusy=false;
-async function poll(){const r=await API.status();const js=r.jobs;recState=r.rec||{};busy=js.some(j=>j.state=='queued'||j.state=='running');recUI();$('#noshut').style.display=r.shutdown?'':'none';
+let polling=false;async function poll(){if(polling||!API)return;polling=true;try{const r=await API.status();if(r.finish){S.finish=r.finish;setSeg('#finish',S.finish)}const js=r.jobs;recState=r.rec||{};busy=js.some(j=>j.state=='queued'||j.state=='running');recUI();$('#noshut').style.display=r.shutdown?'':'none';
  if(S.finish!==undefined&&$('#finsel').value!=S.finish)$('#finsel').value=S.finish;
  if(busy&&!wasBusy&&$('#activity').classList.contains('min'))$('#amin').click();
- if(wasBusy&&!busy){const all=js.filter(j=>j.finished&&Date.now()/1000-j.finished<120);const ok=all.filter(j=>j.state=='done'),bad=all.filter(j=>j.state=='error');
+ if(wasBusy&&!busy){const all=js.filter(j=>j.finished&&Date.now()/1000-j.finished<120);const ok=all.filter(j=>j.state=='done'),bad=all.filter(j=>j.state=='error'||j.state=='partial');
   if(bad.length)toast(`${bad.length} 個工作失敗，詳細原因在下方`,1);
   else if(ok.length){const saved=ok.reduce((a,j)=>a+(j.in_size&&j.out_size&&!j.kind?Math.max(0,j.in_size-j.out_size):0),0);const last=ok[ok.length-1];
    toast(`全部完成（${ok.length} 個）${saved>1<<20?'，省下 '+fmtSize(saved):''}`,0,last.output?['顯示位置',()=>API.reveal(last.output)]:null)}}
  wasBusy=busy;
  const key=JSON.stringify(js);if(key==lastQ)return;lastQ=key;const act=js.filter(j=>j.state=='queued'||j.state=='running').length;
- $('#qcount').textContent=act?`${act} 個進行中`:js.length?'全部完成':'';
- $('#queue').innerHTML=js.length?js.slice().reverse().map(j=>{const rec=j.kind=='rec'&&j.state=='running';const [ic,col]=KC(j);
+ $('#qcount').textContent=act?`${act} 個進行中`:js.length?(js.some(j=>j.state=='error'||j.state=='partial')?'有工作需要檢查':'全部完成'):'';
+ $('#queue').innerHTML=js.length?js.slice(-100).reverse().map(j=>{const rec=j.kind=='rec'&&j.state=='running';const [ic,col]=KC(j);
   const title=j.kind=='dl'?esc(j.label.replace(/^下載：/,'')||j.name):j.kind=='rec'?'螢幕錄影':`${esc(j.name)}<span class="mute"> → ${esc(j.label||TL(j.target))}</span>`;
   const sub=j.state=='running'?(rec?`<span class="err">● ${esc(j.speed)}</span>　${esc(j.msg)}`:[`${(j.progress*100).toFixed(0)}%`,j.speed,j.eta!=null&&j.progress>0.01?'剩 '+fmtT(j.eta):'',j.encoder].filter(Boolean).map(esc).join('　'))
-   :j.state=='done'?`<span class="ok">完成</span>　${sizeDelta(j)}${fmtT(Math.round(j.elapsed))||'不到 1 秒'}${j.encoder?'　'+esc(j.encoder):''}`:j.state=='error'?`<span class="err">${esc(j.msg)}</span>`:SN[j.state];
+   :(j.state=='done'||j.state=='partial')?`<span class="${j.state=='partial'?'warn':'ok'}">${j.state=='partial'?'部分完成':'完成'}</span>　${sizeDelta(j)}${fmtT(Math.round(j.elapsed))||'不到 1 秒'}${j.validation?'　'+esc(j.validation):''}${j.state=='partial'?'　'+esc(j.msg):''}${j.encoder?'　'+esc(j.encoder):''}`:j.state=='error'?`<span class="err">${esc(j.msg)}</span>`:j.state=='queued'&&j.msg?esc(j.msg):SN[j.state];
   return `<div class="q ${j.state}">${tile(ic,col,'md')}<div style="min-width:0"><div class="nm t" title="${esc(j.output||j.name)}">${title}</div><div class="s" title="${esc(j.state=='error'?j.msg:j.encoder)}">${sub}</div>${j.state=='running'&&!rec||j.state=='queued'?`<div class="prog"><i style="width:${(j.progress*100).toFixed(1)}%"></i></div>`:''}</div>
   <div class="acts">${j.state=='queued'||j.state=='running'?`<button class="btn plain${rec?' danger':''}" data-c="${j.id}">${rec?'停止':'取消'}</button>`
-   :j.state=='done'&&j.output?`<button class="btn plain" data-f="${esc(j.output)}">開啟</button><button class="btn icon" data-o="${esc(j.output)}" title="在檔案總管中顯示">${svg('folder')}</button>`
-   :(j.state=='error'||j.state=='cancelled')&&j.retry?`<button class="btn plain" data-rt="${j.id}">重試</button>`:''}</div></div>`}).join(''):'<div class="empty" style="padding:14px">沒有工作</div>'}
+   :(j.state=='done'||j.state=='partial')&&j.output?`<button class="btn plain" data-f="${esc(j.output)}">開啟</button>${!j.kind&&/\.(mp4|mkv|webm|mov|avi|gif|jpg|jpeg|png|webp|avif|bmp|tiff)$/i.test(j.output)?`<button class="btn plain" data-preview="${j.id}">預覽</button>`:''}<button class="btn icon" data-o="${esc(j.output)}" title="在檔案總管中顯示">${svg('folder')}</button>`
+   :(j.state=='error'||j.state=='cancelled')&&j.retry?`${j.output?`<button class="btn plain" data-o="${esc(j.output)}">檢查成品</button>`:''}<button class="btn plain" data-rt="${j.id}">重試</button>`:''}</div></div>`}).join(''):'<div class="empty" style="padding:14px">沒有工作</div>'}catch(e){toast('無法更新工作狀態，稍後會再試',1)}finally{polling=false}}
 let tick=0;setInterval(()=>{tick++;if(API&&(busy||recState.rec||tick%4==0))poll()},700);
 /* ---------- tools ---------- */
 const NEW=new Set(['v_social','v_fill','v_autosub','x_privacy','i_collage','v_frames','i_slideshow']);
@@ -426,9 +514,9 @@ function renderForm(){const fs=tool.fields.filter(shown);$('#t_optwrap').style.d
   else if(f.type=='color')inp=`<input type="color" data-k="${f.k}" value="${esc(v)}">`;
   else if(f.type=='file')inp=`<span class="fpick"><span class="nm" title="${esc(v)}">${v?esc(v.split(/[\\/]/).pop()):'未選擇'}</span><button class="btn tint" data-file="${f.k}">選擇…</button></span>`;
   else if(f.type=='rect')inp=`<span class="fpick"><span class="nm">${v?esc(v.split(',').slice(2).join(' × '))+' 像素':'尚未框選'}</span><button class="btn tint" data-rect="${f.k}">在畫面上框選</button></span>`;
-  else inp=`<input data-k="${f.k}" value="${esc(v)}" placeholder="${esc(f.placeholder||'')}">`;
+  else inp=`<input type="${f.k=='pw'?'password':'text'}" autocomplete="off" data-k="${f.k}" value="${esc(v)}" placeholder="${esc(f.placeholder||'')}">`;
   return `<div class="row"><span class="lab">${esc(f.label)}</span><span class="val">${inp}</span></div>`}).join('');
- let note='';if(tool.id=='v_autosub')note=TS.whisper?('完全離線辨識。「快速」模型已內建；要更準確可選「準確」，第一次使用時下載一次即可。'+(PC.low?'<br><span class="warn">這台電腦效能較精簡，建議用「快速」，「最準」可能需要很久。</span>':'')):'<span class="warn">目前的 FFmpeg 沒有語音辨識功能。</span>';
+ let note='';if(tool.id=='v_autosub')note=TS.whisper?('完全離線辨識。「快速」模型會先檢查是否已下載；要更準確可選「準確」，第一次使用時下載一次即可。'+(PC.low?'<br><span class="warn">這台電腦效能較精簡，建議用「快速」，「最準」可能需要很久。</span>':'')):'<span class="warn">目前的 FFmpeg 沒有語音辨識功能。</span>';
  if(['i_watermark','v_wm_text'].includes(tool.id)&&!TS.font)note='<span class="warn">找不到中文字型。</span>';
  if(tool.id=='a_vocal')note='原理是消去左右聲道相同的聲音，對多數流行歌有效；現場錄音或單聲道效果有限。';
  if(tool.id=='v_stab')note='防手震需要先完整分析一次影片，時間約為一般轉檔的兩倍。';
@@ -506,18 +594,64 @@ $('#q').oninput=e=>ft(e.target.value);
 document.addEventListener('keydown',e=>{const c=e.ctrlKey||e.metaKey,inField=/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
  if(e.key=='Escape'){$$('.modal').forEach(m=>m.classList.remove('on'));if(document.activeElement==$('#gsearch')&&$('#gsearch').value){$('#gsearch').value='';$('#gsearch').dispatchEvent(new Event('input'))}}
  if(c&&e.key=='f'){e.preventDefault();$('#gsearch').focus();$('#gsearch').select()}
- if(c&&e.key=='o'){e.preventDefault();if($('#p-tools').classList.contains('on')&&tool&&!tool.accept.includes('disc'))$('#t_addf').click();else if(S.tab=='convert')$('#addf').click()}
- if(c&&e.key=='Enter'){e.preventDefault();const b=$('#p-tools').classList.contains('on')?$('#t_go'):S.tab=='convert'?$('#go'):S.tab=='dl'?$('#d_go'):null;if(b&&!b.disabled)b.click()}});
+ if(c&&e.key=='o'){e.preventDefault();if(S.tab=='workflow'){$('#wf_addf').click();return}if($('#p-tools').classList.contains('on')&&tool&&!tool.accept.includes('disc'))$('#t_addf').click();else if(S.tab=='convert')$('#addf').click()}
+ if(c&&e.key=='Enter'){e.preventDefault();const b=$('#p-tools').classList.contains('on')?$('#t_go'):S.tab=='workflow'?$('#wf_go'):S.tab=='convert'?$('#go'):S.tab=='dl'?$('#d_go'):null;if(b&&!b.disabled)b.click()}});
+
+/* ---------- delivery workflows ---------- */
+let WF={recipes:[],profiles:[]},wfFiles=[],wfSteps=[],wfExtras={logo:'',sub_file:'',out_dir:''};
+function wfInit(schema){WF=schema||WF;$('#wf_recipe').innerHTML=WF.recipes.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('');wfProfiles();wfRender();wfMode();$('#wf_step_tool').innerHTML=TS.tools.filter(t=>!t.together&&!t.accept.includes('disc')&&!['v_split','v_frames','p_split'].includes(t.id)).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}
+function wfProfiles(selected=''){$('#wf_profiles').innerHTML='<option value="">選擇已保存配方</option>'+WF.profiles.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');$('#wf_profiles').value=selected}
+function wfAdd(list){const seen=new Set(wfFiles.map(f=>f.path));list.forEach(f=>{if(!seen.has(f.path)){f._fresh=true;wfFiles.push(f);seen.add(f.path)}});wfRender()}
+function wfRender(){$('#wf_list').innerHTML=wfFiles.length?wfFiles.slice(0,100).map((f,i)=>`<div class="row ${f._fresh?'file-enter':''}"><span class="lab nm" title="${esc(f.path)}">${esc(f.name)}<small>${CAT[f.cat]||'素材'} · ${fmtSize(f.size)}</small></span><button class="btn icon" data-remove="${i}" aria-label="移除 ${esc(f.name)}">${svg('x')}</button></div>`).join(''):'<div class="empty">還沒有加入素材</div>';$('#wf_go').disabled=!wfFiles.length;$('#wf_hint').textContent=wfFiles.length?`${wfFiles.length} 個素材 · Ctrl+Enter 開始`:'先加入素材';wfFiles.forEach(f=>f._fresh=false);wfLabels()}
+function wfLabels(){['logo','sub','out'].forEach(k=>{const key={logo:'logo',sub:'sub_file',out:'out_dir'}[k];$('#wf_'+k+'_label').textContent=wfExtras[key]||{logo:'未選擇',sub:'選填 · 可燒入所有影片版本',out:S.out_mode=='custom'&&S.out_dir?S.out_dir:'原資料夾內的新交付包'}[k]})}
+function wfMode(){const recipe=$('#wf_recipe').value;$('#wf_desc').textContent=(WF.recipes.find(r=>r.id==recipe)||{}).desc||'';$$('.wf-share').forEach(e=>e.style.display=recipe=='share'?'':'none');$$('.wf-product').forEach(e=>e.style.display=recipe=='product'?'':'none');$$('.wf-brand').forEach(e=>e.style.display=['product','video'].includes(recipe)?'':'none');$('#wf_pipeline').style.display=recipe=='pipeline'?'':'none';$('#wf_video_options').style.display=recipe=='video'?'':'none';wfStepRender()}
+function wfOptions(){return {prefix:$('#wf_prefix').value,preset:$('#wf_quality').value,max_mb:+$('#wf_max').value||20,size:+$('#wf_size').value||1200,watermark:$('#wf_watermark').value,zip:$('#wf_zip').checked,total_mb:+$('#wf_total').value||0,verify_full:$('#wf_verify').checked,autosub:$('#wf_autosub').checked,model:$('#wf_model').value,video_size:+$('#wf_video_size').value,resource_mode:S.resource_mode||'auto',...wfExtras,steps:JSON.parse(JSON.stringify(wfSteps))}}
+function wfApply(p){$('#wf_recipe').value=p.recipe;$('#wf_name').value=p.name;const o=p.options||{};[['prefix','wf_prefix',''],['preset','wf_quality','balanced'],['max_mb','wf_max',20],['size','wf_size',1200],['watermark','wf_watermark',''],['total_mb','wf_total',0],['model','wf_model','base'],['video_size','wf_video_size',PC.ram<=4.5?480:720]].forEach(([k,id,d])=>$('#'+id).value=o[k]??d);[['zip','wf_zip'],['verify_full','wf_verify'],['autosub','wf_autosub']].forEach(([k,id])=>$('#'+id).checked=!!o[k]);wfExtras={logo:o.logo||'',sub_file:o.sub_file||'',out_dir:o.out_dir||''};wfSteps=JSON.parse(JSON.stringify(o.steps||[]));wfMode();wfRender()}
+function wfStepRender(){const el=$('#wf_steps');el.innerHTML=wfSteps.length?wfSteps.map((st,i)=>{const t=TS.tools.find(t=>t.id==st.tool);if(!t)return'';const fields=t.fields.filter(f=>!f.show||Object.entries(f.show).every(([k,v])=>Array.isArray(v)?v.includes(String(st.params[k])):String(v)==String(st.params[k])));return `<div class="flow-step"><div class="flow-step-head"><b>${i+1}. ${esc(t.name)}</b><button class="btn icon" data-move="${i}" data-dir="-1" ${i==0?'disabled':''} aria-label="上移">↑</button><button class="btn icon" data-move="${i}" data-dir="1" ${i==wfSteps.length-1?'disabled':''} aria-label="下移">↓</button><button class="btn plain danger" data-delete="${i}">移除</button></div>${fields.map(f=>{const v=st.params[f.k]??f.default;let inp='';const a=`data-step="${i}" data-param="${f.k}"`;if(f.type=='check')inp=`<input type="checkbox" ${a} ${v?'checked':''}>`;else if(f.type=='select')inp=`<select ${a}>${f.options.map(([x,n])=>`<option value="${esc(x)}" ${String(x)==String(v)?'selected':''}>${esc(n)}</option>`).join('')}</select>`;else if(f.type=='file')inp=`<span class="fpick"><span class="nm">${esc(v?v.split(/[\\/]/).pop():'未選擇')}</span><button class="btn tint" data-step-file="${i}" data-param="${f.k}">選擇</button></span>`;else inp=`<input ${a} type="${f.k=='pw'?'password':f.type=='number'?'number':f.type=='color'?'color':'text'}" value="${esc(v??'')}" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} step="any" placeholder="${f.type=='rect'?'x,y,寬,高':''}" autocomplete="off">`;return `<div class="row"><span class="lab">${esc(f.label)}</span><span class="val">${inp}</span></div>`}).join('')}</div>`}).join(''):'<div class="empty">加入工具，建立自己的處理順序</div>'}
+async function waiting(button, action){if(button.getAttribute('aria-busy')=='true')return;button.setAttribute('aria-busy','true');const was=button.disabled;button.disabled=true;try{return await action()}catch(e){return undefined}finally{button.removeAttribute('aria-busy');button.disabled=button.id=='go'?!files.some(f=>f.target):button.id=='wf_go'?!wfFiles.length:button.id=='t_go'?!tfiles.length:button.id=='disk_launch'?!diskPlan?.available:was}}
+$('#wf_recipe').onchange=wfMode;$('#wf_addf').onclick=()=>waiting($('#wf_addf'),async()=>wfAdd(await call('pick_files')));$('#wf_addd').onclick=()=>waiting($('#wf_addd'),async()=>{const r=await call('pick_folder','add');if(r)wfAdd(r)});$('#wf_drop').onclick=()=>$('#wf_addf').click();$('#wf_drop').onkeydown=e=>{if(e.key=='Enter'||e.key==' '){e.preventDefault();$('#wf_addf').click()}};
+$('#wf_clear').onclick=()=>{const previous=wfFiles;wfFiles=[];wfRender();if(previous.length)toast('已移除素材',false,['復原',()=>{wfFiles=previous;wfRender()}])};$('#wf_list').onclick=e=>{const b=e.target.closest('[data-remove]');if(b){const i=+b.dataset.remove,removed=wfFiles.splice(i,1)[0];wfRender();toast('已移除 '+removed.name,false,['復原',()=>{wfFiles.splice(Math.min(i,wfFiles.length),0,removed);wfRender()}])}};
+['logo','sub'].forEach(k=>{const key=k=='sub'?'sub_file':k;$('#wf_'+k).onclick=async()=>{const p=await call('pick_file',k=='sub'?'字幕 (*.srt;*.ass;*.vtt)':'圖片 (*.png;*.jpg;*.webp)');if(p){wfExtras[key]=p;wfLabels()}};$('#wf_'+k+'_clear').onclick=()=>{wfExtras[key]='';wfLabels()}});$('#wf_out').onclick=async()=>{const p=await call('pick_folder','out');if(p){wfExtras.out_dir=p;wfLabels()}};$('#wf_out_clear').onclick=()=>{wfExtras.out_dir='';wfLabels()};
+$('#wf_step_add').onclick=()=>{if(wfSteps.length>=20){toast('最多 20 個步驟',1);return}const t=TS.tools.find(t=>t.id==$('#wf_step_tool').value);wfSteps.push({tool:t.id,params:Object.fromEntries(t.fields.map(f=>[f.k,f.default]))});wfStepRender();$('#wf_steps').lastElementChild?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'})};
+$('#wf_steps').onchange=e=>{const n=e.target;if(n.dataset.step!==undefined){const st=wfSteps[+n.dataset.step];st.params[n.dataset.param]=n.type=='checkbox'?n.checked:n.type=='number'?+n.value:n.value;if((TS.tools.find(t=>t.id==st.tool)||{}).fields.some(f=>f.show&&n.dataset.param in f.show))wfStepRender()}};
+$('#wf_steps').oninput=e=>{const n=e.target;if(n.dataset.step!==undefined&&n.tagName=='INPUT'&&n.type!='checkbox')wfSteps[+n.dataset.step].params[n.dataset.param]=n.type=='number'?+n.value:n.value};
+$('#wf_steps').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.delete!==undefined){wfSteps.splice(+b.dataset.delete,1);wfStepRender()}if(b.dataset.move!==undefined){const i=+b.dataset.move,d=+b.dataset.dir;[wfSteps[i],wfSteps[i+d]]=[wfSteps[i+d],wfSteps[i]];wfStepRender()}if(b.dataset.stepFile!==undefined){const i=+b.dataset.stepFile,st=wfSteps[i],f=TS.tools.find(t=>t.id==st.tool).fields.find(f=>f.k==b.dataset.param),p=await call('pick_file',f.filter||'');if(p){st.params[f.k]=p;wfStepRender()}}};
+$('#wf_go').onclick=()=>waiting($('#wf_go'),async()=>{if($('#wf_recipe').value=='pipeline'&&!wfSteps.length){toast('請先加入處理步驟',1);return}await call('workflow_run',$('#wf_recipe').value,wfFiles.map(f=>f.path),wfOptions());toast('交付工作已加入佇列');poll()});
+$('#wf_save').onclick=()=>waiting($('#wf_save'),async()=>{const name=$('#wf_name').value.trim();if(!name){toast('請輸入配方名稱',1);$('#wf_name').focus();return}const id=$('#wf_profiles').value;WF=await call('workflow_save',{id,name,recipe:$('#wf_recipe').value,options:wfOptions()});wfProfiles(id||WF.profiles[WF.profiles.length-1].id);toast('配方已保存，密碼不會保存')});
+$('#wf_profiles').onchange=e=>{const p=WF.profiles.find(p=>p.id==e.target.value);if(p)wfApply(p)};$('#wf_export').onclick=async()=>{const id=$('#wf_profiles').value;if(!id){toast('請先選擇已保存配方',1);return}const p=await call('workflow_export',id);if(p)toast('配方已匯出')};$('#wf_import').onclick=async()=>{WF=await call('workflow_import');wfProfiles();toast('配方清單已更新')};$('#wf_delete').onclick=async()=>{const id=$('#wf_profiles').value,p=WF.profiles.find(p=>p.id==id);if(!p)return;WF=await call('workflow_delete',id);wfProfiles();toast('配方已刪除',false,['復原',async()=>{WF=await call('workflow_save',p);wfProfiles(p.id)}])};
+['go','t_go','d_go','recbtn'].forEach(id=>{const b=$('#'+id),fn=b.onclick;b.onclick=()=>waiting(b,()=>fn())});document.addEventListener('click',e=>{const n=e.target.closest('.sw');if(n)n.setAttribute('aria-checked',n.classList.contains('on'))});
+$('#resource_mode').onchange=e=>{S.resource_mode=e.target.value;save()};$('#codec').onchange=e=>{S.codec=e.target.value;save()};$('#verify_full').onchange=e=>{S.verify_full=e.target.checked;save()};
+function accessibility(){document.querySelectorAll('.nav').forEach(n=>{n.setAttribute('role','button');n.tabIndex=0;n.setAttribute('aria-label',n.title);n.onkeydown=e=>{if(e.key=='Enter'||e.key==' '){e.preventDefault();n.click()}}});document.querySelectorAll('.sw').forEach(n=>{n.setAttribute('role','switch');n.setAttribute('aria-checked',n.classList.contains('on'));n.tabIndex=0;n.setAttribute('aria-label',n.parentElement.querySelector('.lab')?.textContent||'切換');n.onkeydown=e=>{if(e.key=='Enter'||e.key==' '){e.preventDefault();n.click();n.setAttribute('aria-checked',n.classList.contains('on'))}}})}
+const a11yObserver=new MutationObserver(()=>accessibility());a11yObserver.observe(document.querySelector('.content'),{childList:true,subtree:true});a11yObserver.observe($('#nav'),{childList:true});$('#toast').setAttribute('role','status');$('#toast').setAttribute('aria-live','polite');
+$('#compareclose').onclick=()=>$('#comparemodal').classList.remove('on');
+
+/* ---------- computer tools ---------- */
+let cleanupPlan=null,systemLoaded=false;
+async function systemInit(){if(systemLoaded)return;systemLoaded=true;try{const r=await call('system_info'),h=r.hardware;$('#sys_info').innerHTML=[['處理器',h.cpu],['系統',h.system+' · '+h.arch],['記憶體',h.ram+' GB'],['邏輯執行緒',h.cores],['最多同時工作',h.slots+' 個（依規格）'],['影音硬體編碼',h.gpu_encoders.length?h.gpu_encoders.join('、'):'使用 CPU'],...h.disks.map(d=>[d.path,'可用 '+fmtSize(d.free)+'／'+fmtSize(d.total)])].map(([k,v])=>`<div class="row"><span class="lab">${esc(k)}</span><span>${esc(v)}</span></div>`).join('');$('#sys_categories').innerHTML=r.cleanup.map(c=>`<div class="row"><label class="lab" for="clean_${c.id}">${esc(c.name)}<small>${esc(c.desc)}</small></label><input type="checkbox" id="clean_${c.id}" data-clean="${c.id}" ${c.default?'checked':''}></div>`).join('')}catch(e){systemLoaded=false}}
+$('#sys_refresh').onclick=()=>waiting($('#sys_refresh'),async()=>{systemLoaded=false;await systemInit()});$('#sys_test').onclick=()=>waiting($('#sys_test'),async()=>{await call('system_test');toast('硬體短測已加入佇列');poll()});
+$('#sys_categories').onchange=()=>{cleanupPlan=null;$('#sys_clean').disabled=true;$('#sys_preview').innerHTML='<div class="empty">範圍已變更，請重新掃描</div>'};
+$('#sys_scan').onclick=()=>waiting($('#sys_scan'),async()=>{const cats=$$('[data-clean]').filter(e=>e.checked).map(e=>e.dataset.clean);if(!cats.length){toast('請選擇清理範圍',1);return}cleanupPlan=await call('cleanup_scan',cats);$('#sys_preview').innerHTML=`<div class="row"><b class="lab">${cleanupPlan.count} 個檔案</b><b>約 ${fmtSize(cleanupPlan.bytes)}</b></div>`+cleanupPlan.categories.filter(c=>c.count).map(c=>`<div class="row"><span class="lab">${esc(c.name)}<small>${c.count} 個檔案</small></span><span>${fmtSize(c.bytes)}</span></div>`).join('')+(cleanupPlan.examples.length?`<div class="row"><span class="lab"><small style="white-space:normal">檔案範例：${cleanupPlan.examples.map(esc).join('、')}</small></span></div>`:'');$('#sys_clean').disabled=!cleanupPlan.count});
+$('#sys_clean').onclick=()=>{if(!cleanupPlan)return;$('#cleanreview').textContent=`將清理 ${cleanupPlan.count} 個暫存檔，預計釋放約 ${fmtSize(cleanupPlan.bytes)}。`;$('#cleanmodal').classList.add('on');$('#clean_cancel').focus()};$('#clean_cancel').onclick=()=>$('#cleanmodal').classList.remove('on');$('#clean_confirm').onclick=()=>waiting($('#clean_confirm'),async()=>{if(!cleanupPlan)return;const r=await call('cleanup_execute',cleanupPlan.token);cleanupPlan=null;$('#sys_clean').disabled=true;$('#cleanmodal').classList.remove('on');$('#sys_preview').innerHTML=`<div class="row"><span class="lab">已清理 ${r.removed} 個檔案<small>${r.skipped} 個項目已變動或無法刪除，已跳過</small></span><b>${fmtSize(r.bytes)}</b></div>`;toast('清理完成，釋放 '+fmtSize(r.bytes))});
+
+/* ---------- disk tools ---------- */
+let diskLoaded=false,diskPlan=null,diskDevices=null;
+function diskMode(){const rec=$('#disk_mode').value=='recovery';$$('.disk-recovery').forEach(e=>e.style.display=rec?'':'none');diskPlan=null;$('#disk_ack').checked=false;$('#disk_launch').disabled=true;$('#disk_plan').innerHTML='<div class="empty">設定已更新，請重新預覽</div>';$('#disk_dependency').textContent=rec?(diskDevices?.recovery?'已偵測到 Microsoft Windows File Recovery':'需要 Microsoft Windows File Recovery；可由官方說明前往 Microsoft Store 安裝。'):'使用 Windows 內建磁碟檢查工具'}
+async function diskInit(){if(diskLoaded)return;diskLoaded=true;try{diskDevices=await call('disk_info');const opts=diskDevices.drives.map(d=>`<option value="${d.drive}">${d.drive} · ${esc(d.filesystem)} · 可用 ${fmtSize(d.free)}</option>`).join('');$('#disk_source').innerHTML='<option value="">選擇來源磁碟</option>'+opts;$('#disk_dest').innerHTML='<option value="">選擇另一磁碟／USB</option>'+opts;diskMode()}catch(e){diskLoaded=false}}
+$('#disk_refresh').onclick=()=>waiting($('#disk_refresh'),async()=>{diskLoaded=false;await diskInit()});['mode','source','dest','recovery_mode','group'].forEach(k=>$('#disk_'+k).onchange=diskMode);
+$('#disk_preview_btn').onclick=()=>waiting($('#disk_preview_btn'),async()=>{diskPlan=await call('disk_preview',$('#disk_mode').value,$('#disk_source').value,$('#disk_dest').value,$('#disk_group').value,$('#disk_recovery_mode').value);$('#disk_plan').innerHTML=`<div class="row"><b>${esc(diskPlan.description)}</b></div>`+diskPlan.warnings.map(w=>`<div class="row"><span class="lab" style="white-space:normal">${esc(w)}</span></div>`).join('');$('#disk_launch').disabled=!diskPlan.available||!$('#disk_ack').checked});
+$('#disk_ack').onchange=()=>$('#disk_launch').disabled=!diskPlan?.available||!$('#disk_ack').checked;
+$('#disk_help_btn').onclick=()=>call('disk_help',$('#disk_mode').value=='recovery'?'recovery':'check');
+$('#disk_launch').onclick=()=>waiting($('#disk_launch'),async()=>{if(!diskPlan||!$('#disk_ack').checked)return;const result=await call('disk_launch',diskPlan.token,true);diskPlan=null;$('#disk_ack').checked=false;$('#disk_plan').innerHTML=`<div class="row"><span class="lab">${esc(result)}</span></div>`;toast('已要求 Windows 開啟工具，請在系統視窗中確認');$('#disk_launch').disabled=true});
 /* ---------- boot ---------- */
 window.addEventListener('pywebviewready',async()=>{API=window.pywebview.api;const r=await API.init();S=r.settings;TS=r.tools;
- PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');$('#aed').textContent=(r.edition||'試用版')+'・免費・沒有期限';document.title='轉檔工廠（'+(r.edition||'試用版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
+ PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');$('#aed').textContent=(r.edition||'試用版')+'・免費・沒有期限';document.title='四維八德（'+(r.edition||'試用版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
  sw('hw',S.hwaccel);sw('fastcopy',S.fastcopy!==false);sw('loudnorm',S.loudnorm);$('#finsel').value=S.finish||'sound';
  if(S.qmin){$('#activity').classList.add('min');$('#amin').style.transform='rotate(180deg)'}
  if((S.dl||{}).out_dir)$('#d_dir').textContent=S.dl.out_dir;if(S.dl){if(S.dl.quality)$('#d_q').value=S.dl.quality;sw('d_subs',S.dl.subs);sw('d_pl',S.dl.playlist);if(S.dl.thumb===false)sw('d_thumb',false)}
  if(!r.ytdlp){$('#d_go').disabled=true;$('#d_msg').innerHTML='<span class="warn">缺少下載元件（tools\\yt-dlp.exe）</span>'}
  const hwc=hw=>$('#hwchip').innerHTML=`<i style="${hw&&!hw.length?'background:var(--gray)':''}"></i>${hw==null?'偵測顯示卡中…':hw.length?'硬體加速：'+hw.join('、'):'使用 CPU 轉檔'}`;
  const hp=async()=>{const hw=await API.hwinfo();hwc(hw);if(hw==null)setTimeout(hp,800)};hp();
- const st=await API.startup_files();const valid=['convert','rec','dl','auto',...TS.groups.map(g=>g[0])];
- go(st.length?'convert':valid.includes(S.tab)?S.tab:'convert');if(st.length)addFiles(st);render();poll()});
+ const st=await API.startup_files();const valid=['workflow','convert','rec','dl','auto','system','disk',...TS.groups.map(g=>g[0])];
+ wfInit(r.workflows);$('#wf_video_size').value=PC.ram<=4.5?'480':'720';$('#resource_mode').value=S.resource_mode||'auto';$('#aver').textContent+=' · '+PC.system+' · '+PC.ram+' GB RAM · '+PC.cores+' 執行緒';if(PC.emulated)toast('目前在 ARM 的 x64 模擬環境執行，部分硬體加速尚未驗證',1);$('#codec').value=S.codec||'auto';$('#verify_full').checked=!!S.verify_full;go(st.length?'convert':valid.includes(S.tab)?S.tab:'workflow');if(st.length)addFiles(st);render();poll()});
 render();
 </script></body></html>

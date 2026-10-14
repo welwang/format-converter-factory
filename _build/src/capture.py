@@ -1,4 +1,4 @@
-"""轉檔工廠: screen recorder, web video downloader, watched folders, finish actions."""
+"""四維八德: screen recorder, web video downloader, watched folders, finish actions."""
 import os, re, sys, json, time, shutil, subprocess, threading, zipfile, urllib.request
 import engine as E
 
@@ -256,9 +256,14 @@ class Downloader:
             elif 'Unsupported URL' in msg: hint = '（不支援這個網站）'
             elif 'HTTP Error 403' in msg or 'nsig' in msg or 'Requested format is not available' in msg: hint = '（網站改版，請按「更新下載元件」後再試）'
             raise RuntimeError(msg[:220] + hint)
+        if not files: raise RuntimeError('下載程序沒有回報任何完成檔案')
         j.encoder = 'yt-dlp' + (f'（{len(files)} 個檔案）' if len(files) > 1 else '')
         if len(files) > 1: j.output = os.path.dirname(files[0])
-        j.state = 'done'; j.progress = 1.0; j.msg = '完成'; j.eta = 0; j.speed = ''; j.measure()
+        if j.proc.returncode != 0:
+            j.state = 'partial'; j.msg = '部分完成：部分影片下載失敗，已保留成功檔案'; j._err = ''.join(err); E.log_error(j)
+        else:
+            j.state = 'done'; j.msg = '完成'
+        j.progress = 1.0; j.eta = 0; j.speed = ''; j.measure()
 
     def update(self):
         exe = ytdlp()
@@ -271,7 +276,7 @@ class Downloader:
 class Watcher:
     """Polls rule folders; converts new files once they stop growing. Never touches the originals."""
     def __init__(self, api):
-        self.api = api; self.rules = []; self.seen = {}; self.sizes = {}; self.lock = threading.Lock()
+        self.api = api; self.rules = []; self.seen = {}; self.sizes = {}; self.lock = threading.RLock(); self.stop_event = threading.Event()
         self.state_file = os.path.join(E.data_dir(), 'watch_state.json')
         try: self.seen = json.load(open(self.state_file, encoding='utf-8'))
         except Exception: self.seen = {}
@@ -283,7 +288,7 @@ class Watcher:
         for r in self.rules:
             key = r['folder']
             if key not in self.seen:
-                self.seen[key] = {} if r.get('existing') else {p: 1 for p in self._list(r)}
+                self.seen[key] = {} if r.get('existing') else {p: dict(sig=[os.path.getsize(p), os.path.getmtime(p)], state='done') for p in self._list(r)}
         self._save()
 
     def _list(self, r):
@@ -291,23 +296,30 @@ class Watcher:
         if not os.path.isdir(folder): return out
         walker = os.walk(folder) if r.get('recursive') else [(folder, [], [f for f in os.listdir(folder)])]
         for root, dirs, fs in walker:
-            if os.path.normcase(os.path.abspath(root)).startswith(skip): continue
-            dirs[:] = [d for d in dirs if not os.path.normcase(os.path.abspath(os.path.join(root, d))).startswith(skip)]
+            if self._inside(root, skip): continue
+            dirs[:] = [d for d in dirs if not self._inside(os.path.join(root, d), skip)]
             for f in fs:
                 p = os.path.join(root, f)
                 if os.path.isfile(p) and E.classify(p)[0] and not f.startswith(('~$', '.')) and not f.endswith(('.part', '.tmp', '.crdownload')):
                     out.append(p)
         return out
 
+    @staticmethod
+    def _inside(path, parent):
+        try: return os.path.commonpath([os.path.normcase(os.path.abspath(path)), parent]) == parent
+        except ValueError: return False
+
     def _out(self, r): return r.get('out_dir') or os.path.join(r['folder'], '已轉檔')
 
     def _save(self):
-        try: json.dump(self.seen, open(self.state_file, 'w', encoding='utf-8'), ensure_ascii=False)
+        try:
+            with self.lock:
+                with open(self.state_file + '.tmp', 'w', encoding='utf-8') as fh: json.dump(self.seen, fh, ensure_ascii=False)
+                os.replace(self.state_file + '.tmp', self.state_file)
         except Exception: pass
 
     def _loop(self):
-        while True:
-            time.sleep(4)
+        while not self.stop_event.wait(4):
             try: self._tick()
             except Exception: pass
 
@@ -317,39 +329,55 @@ class Watcher:
         for r in rules:
             seen = self.seen.setdefault(r['folder'], {})
             for p in self._list(r):
-                if p in seen: continue
                 try: sz = (os.path.getsize(p), os.path.getmtime(p))
                 except OSError: continue
+                entry = seen.get(p)
+                if entry == 1: seen[p] = dict(sig=list(sz), state='done'); changed = True; continue
+                if entry and entry.get('state') == 'pending':
+                    job = self.api._eng.jobs.get(entry.get('job'))
+                    if job and job.state in ('queued', 'running'): continue
+                    finished = job.state if job else self.api._eng.outcomes.get(entry.get('job'))
+                    entry['state'] = 'done' if finished == 'done' else 'error'
+                    entry['retry_at'] = time.time() + 60; changed = True
+                if entry and entry.get('sig') == list(sz):
+                    if entry.get('state') == 'done': continue
+                    if time.time() < entry.get('retry_at', 0) or entry.get('attempts', 0) >= 3: continue
                 if self.sizes.get(p) != sz: self.sizes[p] = sz; continue      # still being written / copied
                 cat, ext = E.classify(p)
                 t = r.get('target') or 'auto'
                 if t == 'auto': t = E.suggest(cat, ext)
-                if not t or t not in E.targets_for(cat, ext): seen[p] = 1; changed = True; continue
+                if not t or t not in E.targets_for(cat, ext): seen[p] = dict(sig=list(sz), state='done'); changed = True; continue
                 opt = dict(self.api.base_opt(), out_dir=self._out(r))
                 if r.get('preset'): opt['preset'] = r['preset']
-                self.api._eng.submit([p], t, opt)
-                seen[p] = 1; changed = True
+                ids = self.api._eng.submit([p], t, opt)
+                attempts = entry.get('attempts', 0) if entry and entry.get('sig') == list(sz) else 0
+                seen[p] = dict(sig=list(sz), state='pending', job=ids[0], attempts=attempts + 1); changed = True
         if changed: self._save()
 
 # ====================================================================== finish actions
 class Finisher:
-    def __init__(self, api): self.api = api; self.was_busy = False; threading.Thread(target=self._loop, daemon=True).start()
+    def __init__(self, api): self.api = api; self.was_busy = False; self.batch = set(); self.stop_event = threading.Event(); threading.Thread(target=self._loop, daemon=True).start()
 
     def _loop(self):
-        while True:
-            time.sleep(2)
+        while not self.stop_event.wait(2):
             busy = self.api._eng.busy()
+            if busy: self.batch.update(j['id'] for j in self.api._eng.status() if j['state'] in ('queued', 'running'))
             if self.was_busy and not busy: self._fire()
             self.was_busy = busy
 
     def _fire(self):
         act = self.api._s.get('finish', 'sound')
+        batch = [self.api._eng.jobs[i] for i in self.batch if i in self.api._eng.jobs]
+        self.batch.clear()
+        if act in ('shutdown', 'sleep') and (not batch or any(j.state != 'done' for j in batch)):
+            self.api._s['finish'] = 'sound'
+            return
         if act in ('sound', 'shutdown', 'sleep') and os.name == 'nt':
             try:
                 import winsound; winsound.MessageBeep(0x40)
             except Exception: pass
         if act == 'shutdown' and os.name == 'nt':
-            subprocess.Popen(['shutdown', '/s', '/t', '120', '/c', '轉檔工廠：工作完成，2 分鐘後關機。要取消請在轉檔工廠按「取消關機」。'], creationflags=NOWIN)
+            subprocess.Popen(['shutdown', '/s', '/t', '120', '/c', '四維八德：工作完成，2 分鐘後關機。要取消請在四維八德按「取消關機」。'], creationflags=NOWIN)
             self.api._s['finish'] = 'sound'; self.api.pending_shutdown = True
         elif act == 'sleep' and os.name == 'nt':
             self.api._s['finish'] = 'sound'

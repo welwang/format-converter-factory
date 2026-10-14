@@ -1,6 +1,29 @@
-"""轉檔工廠 conversion engine (no UI)."""
+"""四維八德 conversion engine (no UI)."""
 import os, sys, re, json, time, shutil, subprocess, threading, tempfile, uuid
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
+
+PDFIUM_LOCK = threading.RLock()
+def pdfium_serial(fn):
+    @wraps(fn)
+    def guarded(*args, **kwargs):
+        with PDFIUM_LOCK:
+            return fn(*args, **kwargs)
+    return guarded
+
+def public_options(opt):
+    return {k: ('[已隱藏]' if k.lower() in ('pw', 'password', 'token', 'cookie', 'cookies') else v)
+            for k, v in opt.items() if not k.startswith('_')}
+
+def kill_process(proc):
+    if not proc or proc.poll() is not None: return
+    try:
+        if os.name == 'nt':
+            subprocess.run([os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'System32', 'taskkill.exe'), '/PID', str(proc.pid), '/T', '/F'], capture_output=True, creationflags=NOWIN, timeout=5)
+        else: proc.kill()
+    except Exception:
+        try: proc.kill()
+        except OSError: pass
 
 NOWIN = 0x08000000 if os.name == 'nt' else 0
 LOWPRI = NOWIN | (0x00004000 if os.name == 'nt' else 0)     # BELOW_NORMAL_PRIORITY_CLASS: the PC stays responsive while converting
@@ -158,11 +181,11 @@ def log(msg):
 
 def log_error(j):
     err = (getattr(j, '_err', '') or '').strip()
-    log(f'FAIL {j.tool or j.target} {j.files} -> {j.output}\n  msg: {j.msg}\n  opt: {j.opt}\n  stderr: ' + err[-1500:].replace('\n', '\n    '))
+    log(f'FAIL {j.tool or j.target} {j.files} -> {j.output}\n  msg: {j.msg}\n  opt: {public_options(j.opt)}\n  stderr: ' + err[-1500:].replace('\n', '\n    '))
 
 def decode_with_ffmpeg(path):
     """HEIC / HEIF (iPhone photos, including 512x512 tile grids) decoded by the separate ffmpeg program,
-    so no HEVC/x265 library is ever loaded into 轉檔工廠 itself."""
+    so no HEVC/x265 library is ever loaded into 四維八德 itself."""
     from PIL import Image
     import io
     if not FFMPEG: raise RuntimeError('找不到 ffmpeg，無法讀取 HEIC')
@@ -258,8 +281,27 @@ def auto_workers():
 def light_workers():
     """Parallel jobs for mostly single-threaded work (images, PDF, documents, e-books)."""
     n = os.cpu_count() or 4
-    if mem_gb() <= 6: return 2
+    if mem_gb() <= 4.5: return 1
+    if mem_gb() <= 8.5: return 2
     return max(2, min(6, n // 2))
+
+def work_slots():
+    if mem_gb() <= 4.5 or (os.cpu_count() or 2) <= 2: return 1
+    if mem_gb() <= 8.5: return 2
+    return 4
+
+def encoder_threads(opt=None):
+    cores = os.cpu_count() or 2
+    if (opt or {}).get('resource_mode') == 'quiet': return max(1, min(2, cores // 2))
+    return max(1, min(8, cores // max(2, auto_workers())))
+
+def platform_info():
+    import platform
+    version = sys.getwindowsversion() if os.name == 'nt' else None
+    machine = os.environ.get('PROCESSOR_ARCHITEW6432') or os.environ.get('PROCESSOR_ARCHITECTURE') or platform.machine()
+    return dict(system='Windows 11' if version and version.build >= 22000 else 'Windows 10' if version and version.major >= 10 else platform.system(),
+                supported=bool(version and version.major >= 10 and sys.maxsize > 2**32), arch=machine, emulated='ARM' in machine.upper(),
+                ram=round(mem_gb(),1), cores=os.cpu_count() or 2, heavy=auto_workers(), light=light_workers(), slots=work_slots())
 
 # LibreOffice / Calibre each take 300-600 MB of RAM: limit how many run together
 OFFICE_SLOTS = threading.Semaphore(1 if mem_gb() <= 8.5 else 2)
@@ -312,10 +354,19 @@ def video_args(target, opt, dur, hw):
     capped = lambda q: ['-crf', str(q), '-maxrate', f'{vbr}k', '-bufsize', f'{vbr*2}k']
     a = []
     if target in ('mp4', 'mov', 'mkv'):
-        enc = hw[0] if (hw and opt.get('hwaccel', True)) else 'libx264'
+        codec = opt.get('codec', 'auto')
+        if codec == 'auto': codec = 'h264'
+        if codec not in ('h264', 'hevc', 'av1'): raise ValueError('不支援的影片編碼')
+        enc = hw[0] if (hw and opt.get('hwaccel', True) and codec == 'h264') else {'h264': 'libx264', 'hevc': 'libx265', 'av1': 'libsvtav1'}[codec]
         a += ['-c:v', enc]
-        if enc == 'libx264':
+        a += ['-threads', str(encoder_threads(opt))]
+        if enc in ('libx264', 'libx265'):
             a += ['-preset', p['x264']] + ((rate() if strict else capped(PRESET['high']['crf'])) if vbr else ['-crf', str(p['crf'])])
+            if enc == 'libx265':
+                a += ['-x265-params', f'log-level=error:pools={encoder_threads(opt)}:frame-threads={min(3, encoder_threads(opt))}']
+                if target in ('mp4', 'mov'): a += ['-tag:v', 'hvc1']
+        elif enc == 'libsvtav1':
+            a += ['-preset', '8', '-crf', str(p['crf'] + 7)] + (rate() if vbr else [])
         elif enc == 'h264_nvenc':
             a += ['-preset', 'p5', '-tune', 'hq', '-spatial-aq', '1', '-rc-lookahead', '20', '-bf', '3']
             a += ((['-rc', 'vbr'] + rate() if strict else ['-rc', 'vbr', '-cq', str(PRESET['high']['cq']), '-b:v', f'{vbr}k', '-maxrate', f'{vbr}k', '-bufsize', f'{vbr*2}k'])
@@ -328,7 +379,7 @@ def video_args(target, opt, dur, hw):
         if target in ('mp4', 'mov'): a += ['-movflags', '+faststart']
         return a, enc
     if target == 'webm':
-        a += ['-c:v', 'libvpx-vp9', '-row-mt', '1', '-tile-columns', '2', '-deadline', 'good', '-cpu-used', '4' if opt.get('preset') != 'small' else '3']
+        a += ['-c:v', 'libvpx-vp9', '-threads', str(encoder_threads(opt)), '-row-mt', '1', '-tile-columns', '2', '-deadline', 'good', '-cpu-used', '4' if opt.get('preset') != 'small' else '3']
         a += ((rate() if strict else ['-crf', str(PRESET['high']['vp9']), '-b:v', f'{vbr}k']) if vbr else ['-crf', str(p['vp9']), '-b:v', '0'])
         return a + ['-c:a', 'libopus', '-b:a', f"{min(vab, p['opus'])}k"], 'libvpx-vp9'
     if target == 'avi':
@@ -362,13 +413,18 @@ class Job:
             except OSError: pass
         self.cat = 'tool' if tool else classify(files[0])[0]
         self.tool = tool; self.label = label
+        self.validation = ''; self.warnings = []; self.child = None
 
     def info(self):
         nm = os.path.basename(self.files[0].rstrip('\\/')) or self.files[0]
         if self.merge and len(self.files) > 1: nm += f' 等 {len(self.files)} 個'
-        return dict(id=self.id, name=nm, target=self.target, label=self.label or '', kind=self.tool or '', state=self.state, progress=round(self.progress, 3), speed=self.speed,
+        progress = self.progress; speed = self.speed
+        if self.child and self.state == 'running':
+            progress = max(progress, getattr(self, '_child_base', progress) + getattr(self, '_child_span', 0) * self.child.progress)
+            speed = self.child.speed or self.msg or speed
+        return dict(id=self.id, name=nm, target=self.target, label=self.label or '', kind=self.tool or '', state=self.state, progress=round(min(1, progress), 3), speed=speed,
                     eta=self.eta, msg=self.msg, output=self.output, encoder=self.encoder, elapsed=round(self.elapsed, 2),
-                    in_size=self.in_size, out_size=self.out_size, finished=self.finished, retry=self.tool not in ('rec',))
+                    in_size=self.in_size, out_size=self.out_size, finished=self.finished, retry=self.tool not in ('rec',), validation=self.validation)
 
     def measure(self):
         p = self.output
@@ -382,6 +438,9 @@ class Job:
 class Engine:
     def __init__(self, workers=2, light=None):
         self.jobs = {}; self.order = []; self.lock = threading.Lock()
+        self.outcomes = {}
+        self.execution_slots = threading.Semaphore(work_slots())
+        self.quiet_slots = threading.Semaphore(1)
         # ffmpeg jobs are multi-threaded on their own -> few at a time; everything else runs in a wider pool
         self.pool = ThreadPoolExecutor(max_workers=workers)
         self.light = ThreadPoolExecutor(max_workers=light or light_workers())
@@ -391,6 +450,7 @@ class Engine:
         os.makedirs(folder, exist_ok=True)
         stem = os.path.splitext(os.path.basename(src))[0]
         if job.merge: stem += '_合併'
+        stem += job.opt.get('_suffix', '')
         return unique_path(os.path.join(folder, f'{stem}.{ext}'), avoid=job.files)
 
     def submit(self, files, target, opt, merge=False):
@@ -422,27 +482,60 @@ class Engine:
     def cancel(self, jid):
         j = self.jobs.get(jid)
         if not j: return
+        if j.state not in ('queued', 'running'): return
         j.cancelled = True
+        if j.child:
+            j.child.cancelled = True
+            if j.child.proc and j.child.proc.poll() is None:
+                kill_process(j.child.proc)
         if j.state == 'queued': j.state = 'cancelled'; j.msg = '已取消'
         if j.proc and j.proc.poll() is None:
-            try: j.proc.kill()
-            except Exception: pass
+            kill_process(j.proc)
 
     def clear_done(self):
         with self.lock:
             self.order = [i for i in self.order if self.jobs[i].state in ('queued', 'running')]
+            self.jobs = {i: self.jobs[i] for i in self.order}
+
+    def shutdown(self):
+        for j in self.status():
+            if j['state'] in ('queued', 'running'): self.cancel(j['id'])
+        self.pool.shutdown(wait=False, cancel_futures=True)
+        self.light.shutdown(wait=False, cancel_futures=True)
 
     def status(self):
         with self.lock:
             return [self.jobs[i].info() for i in self.order]
 
     def _run(self, j):
+        if getattr(j, '_nested', False): return self._run_guarded(j)
+        quiet = j.opt.get('resource_mode') == 'quiet'
+        if quiet:
+            while not self.quiet_slots.acquire(timeout=.1):
+                if j.cancelled: return
+                j.msg = '省資源模式：等待前一個工作'
+        acquired = False
+        try:
+            while not self.execution_slots.acquire(timeout=.1):
+                if j.cancelled: return
+                j.msg = '等待可用處理資源'
+            acquired = True
+            return self._run_guarded(j)
+        finally:
+            if acquired: self.execution_slots.release()
+            if quiet: self.quiet_slots.release()
+
+    def _run_guarded(self, j):
         if j.cancelled: return
         j.state = 'running'; j.started = time.time()
         try:
             self._check_space(j)
             ext = classify(j.files[0])[1]
-            if j.cat == 'tool':
+            if j.tool == 'hardware_test':
+                import system_tools; system_tools.run_tests(self, j)
+            elif j.tool == 'workflow':
+                import workflows; workflows.run(self, j)
+            elif j.cat == 'tool':
                 import tools; tools.run(self, j)
             elif ext in UNSUPPORTED and not targets_for(j.cat, ext): raise RuntimeError(UNSUPPORTED[ext])
             elif j.cat == 'video' and j.target == 'srt':
@@ -463,8 +556,10 @@ class Engine:
                 self._sub(j)
             elif j.cat == 'model':
                 self._model(j)
+            else: raise RuntimeError('無法辨識來源檔案類型')
             if j.cancelled: raise InterruptedError
-            j.state = 'done'; j.progress = 1.0; j.msg = '完成'; j.eta = 0
+            if j.tool != 'workflow': self.validate(j)
+            j.state = 'partial' if j.warnings else 'done'; j.progress = 1.0; j.msg = '部分完成：' + '；'.join(j.warnings)[:240] if j.warnings else '完成'; j.eta = 0
         except InterruptedError:
             j.state = 'cancelled'; j.msg = '已取消'
             if j.output and os.path.exists(j.output):
@@ -477,6 +572,9 @@ class Engine:
                 except Exception: pass
         j.elapsed = time.time() - j.started
         j.measure()
+        with self.lock:
+            self.outcomes[j.id] = j.state
+            if len(self.outcomes) > 1000: self.outcomes.pop(next(iter(self.outcomes)))
         if j.state == 'error': log_error(j)
 
     def _check_space(self, j):
@@ -490,13 +588,22 @@ class Engine:
             raise RuntimeError(f'磁碟空間不足：{os.path.splitdrive(os.path.abspath(folder))[0] or folder} 只剩 {free / 2 ** 20:.0f} MB，'
                                f'請清出空間或在「儲存位置」改存到其他磁碟')
 
+    def validate(self, j):
+        import validation
+        try:
+            j.validation = validation.check(self, j)
+        except Exception:
+            j.keep_output = True
+            j.validation = '未通過輸出檢查'
+            raise
+
     def retry(self, jid):
         """Run a failed / cancelled job again with exactly the same settings."""
         old = self.jobs.get(jid)
-        if not old or old.state not in ('error', 'cancelled', 'done'): return None
+        if not old or old.state not in ('error', 'cancelled', 'done', 'partial'): return None
         j = Job(old.files, old.target, old.opt, old.merge, tool=old.tool, label=old.label)
         if old.tool == 'dl': return 'dl'
-        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in __import__('tools').HEAVY)
+        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in ('workflow', 'hardware_test') or j.tool in __import__('tools').HEAVY)
         with self.lock:
             self.jobs[j.id] = j; self.order.append(j.id)
             if old.state != 'done': self.order.remove(jid)
@@ -510,10 +617,10 @@ class Engine:
         out = self.out_path(j, j.files[0], t); j.output = out
         ss = float(o.get('trim_start') or 0); to = float(o.get('trim_end') or 0)
         tmb = float(o.get('target_mb') or 0)
-        if (tmb and not j.merge and not ss and not to and not int(o.get('height') or 0) and not o.get('loudnorm')
+        if (tmb and not j.merge and not ss and not to and not int(o.get('height') or 0) and not o.get('loudnorm') and not o.get('_vf') and not o.get('_logo') and o.get('codec', 'auto') == 'auto'
                 and classify(j.files[0])[1] == t and os.path.getsize(j.files[0]) <= tmb * 1048576):
             shutil.copyfile(j.files[0], out); j.encoder = '原檔已小於目標大小，直接複製'; return
-        cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-progress', 'pipe:1', '-nostats', '-v', 'error']
+        cmd = [FFMPEG, '-hide_banner', '-nostdin', '-y', '-progress', 'pipe:1', '-nostats', '-v', 'error', '-filter_complex_threads', str(min(2, encoder_threads(o)))]
         if j.merge:
             durs = [probe_duration(f) for f in j.files]; dur = sum(durs)
             for f in j.files: cmd += ['-i', f]
@@ -523,7 +630,16 @@ class Engine:
                 cmd += ['-filter_complex', fc, '-map', '[a]']
             else:
                 h = int(o.get('height') or 0) or 720
-                pre = ''.join(f'[{i}:v:0]' + ''.join(x + ',' for x in hdr_filters(j.files[i])) + f'scale=-2:{h}:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:{h}:(ow-iw)/2:0,setsar=1,fps=30,format=yuv420p[v{i}];[{i}:a:0]aresample=48000[a{i}];' for i in range(n))
+                first = probe_info(j.files[0])
+                w = max(2, round(h * (first['width'] or 16) / (first['height'] or 9)) // 2 * 2)
+                pre = ''
+                for i, src in enumerate(j.files):
+                    pre += f'[{i}:v:0]' + ''.join(x + ',' for x in hdr_filters(src))
+                    pre += f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS[v{i}];'
+                    if any(k == 'audio' for k, _ in probe_info(src)['streams']):
+                        pre += f'[{i}:a:0]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS[a{i}];'
+                    else:
+                        pre += f'anullsrc=r=48000:cl=stereo,atrim=duration={max(durs[i], 0.1)},asetpts=PTS-STARTPTS[a{i}];'
                 fc = pre + ''.join(f'[v{i}][a{i}]' for i in range(n)) + f'concat=n={n}:v=1:a=1[v][a]'
                 cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '[a]']
         else:
@@ -540,6 +656,7 @@ class Engine:
             h = 0                                    # never upscale: bigger file, no extra detail
         if not j.merge: vf += hdr_filters(j.files[0])
         if h and not j.merge and t != 'gif': vf.append(f'scale=-2:{h}')
+        vf += list(o.get('_vf') or [])
         if t in AUDIO:
             if self._can_copy_audio(j, t, info):
                 cmd += ['-vn', '-map', '0:a:0', '-c:a', 'copy'] + (['-f', 'adts'] if t == 'aac' else [])
@@ -558,7 +675,9 @@ class Engine:
             j.encoder = '直接封裝（不重新編碼）'
         else:
             va, enc = video_args(t, o, dur, detect_hw())
-            if vf: cmd += ['-vf', ','.join(vf)]
+            if o.get('_logo') and not j.merge:
+                cmd += ['-i', o['_logo'], '-filter_complex', '[0:v]' + (','.join(vf) if vf else 'null') + "[base];[1:v]scale=160:-1[logo];[base][logo]overlay=W-w-20:H-h-20[vout]", '-map', '[vout]', '-map', '0:a?']
+            elif vf: cmd += ['-vf', ','.join(vf)]
             cmd += va; j.encoder = enc
         if o.get('loudnorm') and t != 'gif' and '-c' not in cmd and 'copy' not in cmd:
             cmd += ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11']
@@ -587,6 +706,7 @@ class Engine:
                 import tools; raise RuntimeError(tools.ff_error(j._err))
         # re-encoded result bigger than the source and nothing was asked to change? keep the original streams instead
         if (not j.merge and not ss and not to and not h and not float(o.get('target_mb') or 0) and not o.get('loudnorm')
+                and not o.get('_vf') and not o.get('_logo') and o.get('codec', 'auto') == 'auto'
                 and t in ('mp4', 'mkv', 'mov') and '-c:v' in cmd and o.get('fastcopy', True)
                 and os.path.getsize(out) > os.path.getsize(j.files[0]) and self._streams_copyable(j, t)):
             cmd2 = cmd[:cmd.index('-i') + 2] + ['-map', '0', '-c', 'copy'] + (['-movflags', '+faststart'] if t in ('mp4', 'mov') else []) + [out]
@@ -613,8 +733,10 @@ class Engine:
 
     def _can_copy(self, j, t):
         o = j.opt
-        if j.merge or not o.get('fastcopy', True) or t not in ('mp4', 'mkv', 'mov') or int(o.get('height') or 0) or float(o.get('target_mb') or 0) or o.get('loudnorm'):
+        if j.merge or not o.get('fastcopy', True) or o.get('_vf') or o.get('_logo') or t not in ('mp4', 'mkv', 'mov') or int(o.get('height') or 0) or float(o.get('target_mb') or 0) or o.get('loudnorm'):
             return False
+        codec = o.get('codec', 'auto')
+        if codec != 'auto' and any(name != codec for typ, name in probe(j.files[0])[1] if typ == 'video'): return False
         return self._streams_copyable(j, t) and os.path.splitext(j.files[0])[1].lower() != '.' + t
 
     def _streams_copyable(self, j, t):
@@ -631,9 +753,11 @@ class Engine:
         return has_v
 
     def _exec(self, j, cmd, dur, cwd=None, base=0.0, span=1.0):
+        if j.cancelled: raise InterruptedError
         j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=LOWPRI, cwd=cwd)
+        proc = j.proc
         err = []
-        th = threading.Thread(target=lambda: err.extend(j.proc.stderr.readlines()), daemon=True); th.start()
+        th = threading.Thread(target=lambda: err.extend(proc.stderr.readlines()), daemon=True); th.start()
         t0 = time.time()
         for line in j.proc.stdout:
             k, _, v = line.strip().partition('=')
@@ -647,6 +771,8 @@ class Engine:
                 j.speed = v.strip()
         j.proc.wait(); th.join(2)
         j._rc = j.proc.returncode; j._err = ''.join(err)
+        proc.stdout.close()
+        if not th.is_alive(): proc.stderr.close()
         if j.cancelled: raise InterruptedError
 
     # ---------- images ----------
@@ -732,6 +858,7 @@ class Engine:
         with open(out, 'wb') as fh: fh.write(data)
 
     # ---------- pdf ----------
+    @pdfium_serial
     def _pdf(self, j):
         if j.target == 'txt': return self._pdf_text(j)
         if j.target in ('docx', 'epub'): return self._ebook(j)
@@ -769,6 +896,7 @@ class Engine:
             if j.target == 'jpg': img.convert('RGB').save(p, quality=q, optimize=True, progressive=True)
             else: img.save(p, optimize=preset == 'small')
             j.progress = (i + 1) / n
+        pdf.close()
 
     @staticmethod
     def _shrink_pdf_images(page, quality, max_side):
@@ -787,15 +915,20 @@ class Engine:
             except Exception:
                 continue
 
+    @pdfium_serial
     def _pdf_text(self, j):
         import pypdfium2 as pdfium
         pdf = pdfium.PdfDocument(j.files[0])
         out = self.out_path(j, j.files[0], 'txt'); j.output = out
         with open(out, 'w', encoding='utf-8') as fh:
-            for i in range(len(pdf)): fh.write(pdf[i].get_textpage().get_text_range() + '\n\f\n'); j.progress = (i + 1) / len(pdf)
+            for i in range(len(pdf)):
+                if j.cancelled: raise InterruptedError
+                fh.write(pdf[i].get_textpage().get_text_range() + '\n\f\n'); j.progress = (i + 1) / len(pdf)
+        pdf.close()
         j.encoder = 'PDFium'
 
     def _proc(self, j, cmd, what, cwd=None):
+        if j.cancelled: raise InterruptedError
         j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=LOWPRI, cwd=cwd)
         o, e = j.proc.communicate(); j._err = e or o
         if j.cancelled: raise InterruptedError
@@ -837,7 +970,16 @@ class Engine:
         else:
             out = self.out_path(j, src, j.target); j.output = out
             lvl = {'high': '9', 'balanced': '5', 'small': '9'}[j.opt.get('preset', 'balanced')]
-            self._proc(j, [SEVENZIP, 'a', '-bso0', '-bsp0', f'-mx={lvl}', '-mmt=on', out] + j.files, '壓縮')
+            tmp = tempfile.mkdtemp(prefix='zdgc_repack_')
+            try:
+                self._proc(j, [SEVENZIP, 'x', '-y', '-bso0', '-bsp0', f'-o{tmp}', src], '解開來源壓縮檔')
+                inner = os.listdir(tmp)
+                if len(inner) == 1 and inner[0].lower().endswith('.tar'):
+                    tar = os.path.join(tmp, inner[0]); self._proc(j, [SEVENZIP, 'x', '-y', '-bso0', f'-o{tmp}', tar], '解開 TAR'); os.remove(tar)
+                if not os.listdir(tmp): raise RuntimeError('來源壓縮檔沒有內容')
+                self._proc(j, [SEVENZIP, 'a', '-bso0', '-bsp0', f'-mx={lvl}', '-mmt=on', out, '.\\*'], '重新壓縮', cwd=tmp)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
         j.encoder = '7-Zip'
 
     def _sub(self, j):
@@ -874,7 +1016,8 @@ class Engine:
             self._lo_slots.n = sl
         d = os.path.join(tempfile.gettempdir(), 'zdgc_lo', f'p{sl}')
         os.makedirs(d, exist_ok=True)
-        return 'file:///' + d.replace(os.sep, '/')
+        from pathlib import Path
+        return Path(d).as_uri()
 
     def _office(self, j):
         if not SOFFICE: raise RuntimeError('需要 LibreOffice 才能轉這個格式')

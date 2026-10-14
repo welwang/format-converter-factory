@@ -1,8 +1,8 @@
-"""轉檔工廠 self test.
+"""四維八德 self test.
 
-    轉檔工廠.exe --selftest            -> builds its own sample files and tests every converter / tool
-    轉檔工廠.exe --selftest --ai       -> also tests AI subtitles (downloads the small 150 MB model once)
-    轉檔工廠.exe --selftest --rec      -> also records the screen for 3 seconds
+    四維八德.exe --selftest            -> builds its own sample files and tests every converter / tool
+    四維八德.exe --selftest --ai       -> also tests AI subtitles (downloads the small 150 MB model once)
+    四維八德.exe --selftest --rec      -> also records the screen for 3 seconds
 
 Results: selftest\\selftest.log next to the program (the folder is opened when done).
 """
@@ -12,12 +12,16 @@ import engine as E
 def main(arg=None):
     flags = set(a for a in sys.argv[2:] if a.startswith('--'))
     root = arg if arg and not arg.startswith('--') else os.path.join(E.base_dir(), 'selftest')
-    smp = os.path.join(root, 'samples'); out = os.path.join(root, 'out')
-    shutil.rmtree(out, ignore_errors=True); os.makedirs(smp, exist_ok=True); os.makedirs(out, exist_ok=True)
+    smp = os.path.join(root, 'samples'); out = E.unique_path(os.path.join(root, 'out'))
+    os.makedirs(smp, exist_ok=True); os.makedirs(out, exist_ok=True)
     logf = open(os.path.join(root, 'selftest.log'), 'w', encoding='utf-8')
-    def log(s): logf.write(s + '\n'); logf.flush(); print(s)
+    def log(s):
+        logf.write(s + '\n'); logf.flush()
+        if sys.stdout:
+            try: print(s)
+            except UnicodeEncodeError: print(s.encode(sys.stdout.encoding or 'utf-8', 'replace').decode(sys.stdout.encoding or 'utf-8'))
     import tools as T, capture as C
-    log(f'轉檔工廠 自我檢測  {time.strftime("%Y-%m-%d %H:%M:%S")}')
+    log(f'四維八德 自我檢測  {time.strftime("%Y-%m-%d %H:%M:%S")}')
     log(f'Windows {platform.version()}  {platform.machine()}  CPU {os.cpu_count()}  Python {platform.python_version()}')
     ffv = E.run([E.FFMPEG, '-version']).stdout.splitlines()[0] if E.FFMPEG else '（沒有）'
     log(f'ffmpeg   {ffv}')
@@ -113,7 +117,7 @@ def main(arg=None):
         wav = S('speech.wav')
         ps = ("Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
               "$v=$s.GetInstalledVoices()|?{$_.VoiceInfo.Culture.Name -like 'zh*'}|select -First 1; if($v){$s.SelectVoice($v.VoiceInfo.Name)}; "
-              f"$s.SetOutputToWaveFile('{wav}'); $s.Speak('今天天氣很好，我們一起去公園散步。這是轉檔工廠的語音辨識測試。'); $s.Dispose()")
+              f"$s.SetOutputToWaveFile('{wav}'); $s.Speak('今天天氣很好，我們一起去公園散步。這是四維八德的語音辨識測試。'); $s.Dispose()")
         subprocess.run(['powershell', '-NoProfile', '-Command', ps], creationflags=E.NOWIN)
         if os.path.isfile(wav):
             ids = eng.submit_tool('v_autosub', [wav], dict(lang='zh', model='base', trad=True, out='srt', out_dir=out), 'AI 自動字幕'); wait(ids, 1800); report('AI 自動字幕（base 模型）', ids)
@@ -130,13 +134,21 @@ def main(arg=None):
         except Exception as e: log(f'FAIL 螢幕錄影  {e}'); results.append(False)
 
     # cancel test
-    ids = eng.submit([S('v.mp4')], 'mkv', dict(fastcopy=False, preset='high', out_dir=out, hwaccel=False)); time.sleep(1.2); eng.cancel(ids[0]); wait(ids)
+    def slow_cancel_test(eng, j, o):
+        eng._exec(j, [E.FFMPEG, '-hide_banner', '-nostdin', '-v', 'error', '-re', '-i', j.files[0], '-f', 'null', '-'], 8)
+    T.RUN['__cancel_test'] = slow_cancel_test
+    ids = eng.submit_tool('__cancel_test', [S('v.mp4')], {}, '取消測試')
+    deadline = time.time() + 10
+    while eng.jobs[ids[0]].proc is None and time.time() < deadline: time.sleep(.02)
+    eng.cancel(ids[0]); wait(ids); T.RUN.pop('__cancel_test', None)
     ok = eng.jobs[ids[0]].state == 'cancelled'; results.append(ok); log(f"\n{'OK  ' if ok else 'FAIL'} 取消工作")
     n = len(results); bad = n - sum(results)
     log(f'\n結果：{n - bad} / {n} 通過' + ('' if not bad else f'，{bad} 項失敗（詳細原因見上方 FAIL 與 logs\\zdgc.log）'))
     logf.close()
     try: os.startfile(root)
     except Exception: pass
+    eng.pool.shutdown(wait=True); eng.light.shutdown(wait=True)
+    return 1 if bad else 0
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else None)
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else None))

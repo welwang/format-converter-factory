@@ -1,10 +1,10 @@
-"""轉檔工廠 tool box: video / audio / image / PDF / disc tools (no UI).
+"""四維八德 tool box: video / audio / image / PDF / disc tools (no UI).
 
 Every tool is described once in TOOLS (the UI builds its form from that) and implemented
 by a function in RUN that receives (engine, job).  Jobs run inside Engine's thread pools,
 so progress, cancel and the queue work exactly like normal conversions.
 """
-import os, re, io, json, math, time, shutil, subprocess, tempfile
+import os, re, io, json, math, time, shutil, subprocess, tempfile, threading
 import engine as E
 
 POS = [['br', '右下'], ['bl', '左下'], ['tr', '右上'], ['tl', '左上'], ['c', '正中央'], ['b', '下方置中'], ['t', '上方置中']]
@@ -363,11 +363,9 @@ def t_social(eng, j, o):
         if kbps < 350: o2['height'] = min(o2['height'], 360)
     j.opt = o2; j.target = 'mp4'; j.cat = 'video'
     suffix = {'mb10': '_10MB', 'mb20': '_20MB', 'hd720': '_720p'}[m]
-    orig = eng.out_path
-    eng_out = lambda job, s, ext: out_for(job, s, ext, suffix)
-    eng.out_path = eng_out
+    j.opt['_suffix'] = suffix
     try: eng._ffmpeg(j)
-    finally: eng.out_path = orig; j.cat = 'tool'
+    finally: j.cat = 'tool'
 
 def t_crop(eng, j, o):
     src = j.files[0]; m = o.get('mode', '9:16')
@@ -638,7 +636,13 @@ def whisper_ok():
         except Exception: _WHISPER = False
     return _WHISPER
 
+_MODEL_LOCK = threading.Lock()
 def ensure_model(j, key):
+    with _MODEL_LOCK:
+        if j.cancelled: raise InterruptedError
+        return _ensure_model(j, key)
+
+def _ensure_model(j, key):
     name, size = MODELS[key]
     have = find_model(name, size * 0.98)
     if have: return have
@@ -663,6 +667,9 @@ def ensure_model(j, key):
 
 VAD_URL = 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin'
 def ensure_vad():
+    with _MODEL_LOCK: return _ensure_vad()
+
+def _ensure_vad():
     have = find_model('ggml-silero-v5.1.2.bin', 100000)
     if have: return have
     p = os.path.join(model_dir(), 'ggml-silero-v5.1.2.bin')
@@ -686,6 +693,7 @@ def t_autosub(eng, j, o):
     if not whisper_ok(): raise RuntimeError('這個 FFmpeg 版本沒有內建語音辨識（需要 FFmpeg 8 以上的 full 版）')
     src = j.files[0]; d = info(src)['dur']
     if not has_audio(src): raise RuntimeError('檔案裡沒有聲音')
+    if o.get('model') == 'medium' and E.mem_gb() < 6: raise RuntimeError('記憶體較少，請使用「快速」或「準確」模型，避免系統過度使用分頁檔')
     model = ensure_model(j, o.get('model', 'small'))
     lang = o.get('lang', 'zh'); lang = 'zh' if lang == 'yue' else lang   # whisper.cpp has no separate Cantonese in older models
     tmp = tmpdir()
@@ -1076,8 +1084,7 @@ def t_pencrypt(eng, j, o):
     import secrets
     owner = secrets.token_hex(16)
     try: w.encrypt(user_password=pw, owner_password=owner, algorithm='AES-256', permissions_flag=perm); alg = 'AES-256'
-    except Exception:
-        w = PdfWriter(clone_from=r); w.encrypt(user_password=pw, owner_password=owner, algorithm='RC4-128', permissions_flag=perm); alg = 'RC4-128'
+    except ImportError: raise RuntimeError('缺少 AES 加密元件，請使用包含 cryptography 的完整建置版本')
     out = out_for(j, src, 'pdf', '_加密'); j.output = out
     with open(out, 'wb') as fh: w.write(fh)
     j.encoder = f'pypdf（{alg}）'

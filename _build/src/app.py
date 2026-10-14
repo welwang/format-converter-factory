@@ -1,15 +1,18 @@
-import os, sys, json, threading, base64, subprocess
+import os, sys, json, threading, base64, subprocess, copy, uuid
 import webview
 import engine as E
 import tools as T
 import capture as C
+import workflows as W
+import system_tools as ST
+import disk_tools as DT
 
 SETTINGS = os.path.join(E.data_dir(), 'settings.json')
-VERSION = '2.0.0'
+VERSION = '2.1.0'
 EDITION = '試用版'                 # free, no time limit, no locked features - just labelled like WinRAR / 7-Zip style freeware
-TITLE = f'轉檔工廠（{EDITION}）'
+TITLE = f'四維八德（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,
-                finish='sound', watch=[], tool_opts={}, rec={}, dl={}, tab='convert')
+                finish='sound', watch=[], tool_opts={}, rec={}, dl={}, tab='workflow', flow_profiles=[], codec='auto', verify_full=False, resource_mode='auto')
 
 def res(p):
     b = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -17,9 +20,10 @@ def res(p):
 
 class Api:
     def __init__(self):
-        self._s = dict(DEFAULTS)
+        self._s = copy.deepcopy(DEFAULTS); self._settings_lock = threading.RLock()
         try: self._s.update(json.load(open(SETTINGS, encoding='utf-8-sig')))
         except Exception: pass
+        self._s = W.clean_settings(self._s)
         self._eng = E.Engine(int(self._s.get('workers') or 0) or E.auto_workers())
         self._win = None
         self.pending_shutdown = False
@@ -32,7 +36,80 @@ class Api:
     def base_opt(self):
         s = self._s
         return dict(preset=s.get('preset', 'balanced'), hwaccel=s.get('hwaccel', True), fastcopy=s.get('fastcopy', True),
-                    out_dir=s.get('out_dir') if s.get('out_mode') == 'custom' else '')
+                    out_dir=s.get('out_dir') if s.get('out_mode') == 'custom' else '', codec=s.get('codec', 'auto'), verify_full=s.get('verify_full', False), resource_mode=s.get('resource_mode', 'auto'))
+
+    def workflow_schema(self): return dict(recipes=W.RECIPES, profiles=self._s.get('flow_profiles') or [])
+
+    def system_info(self): return dict(hardware=ST.hardware_info(), cleanup=ST.CLEANUP)
+
+    def disk_info(self): return DT.inventory()
+
+    def disk_preview(self, mode, source, destination, group, recovery_mode):
+        if self._eng.busy(): raise ValueError('請先完成目前工作，避免同時存取要修復或救援的磁碟')
+        self._disk_plan = DT.plan(mode, source, destination, group, recovery_mode)
+        return {k:v for k,v in self._disk_plan.items() if k!='command'}
+
+    def disk_launch(self, token, confirmed):
+        if self._eng.busy(): raise ValueError('請先完成目前工作')
+        if not getattr(self, '_disk_plan', None): raise ValueError('請先預覽磁碟操作')
+        result=DT.launch(self._disk_plan, token, confirmed);self._disk_plan=None
+        return result
+
+    def disk_help(self, kind):
+        import webbrowser
+        webbrowser.open(DT.HELP.get(kind,DT.HELP['check']));return True
+
+    def system_test(self):
+        return self._eng.submit_tool('hardware_test', ['電腦硬體'], dict(resource_mode='quiet', out_dir=os.path.join(E.data_dir(), 'hardware-tests')), '電腦硬體短測', heavy=True)
+
+    def cleanup_scan(self, categories):
+        if self._eng.busy(): raise ValueError('請先完成或停止進行中的工作，再掃描清理')
+        self._cleanup_plan = ST.scan_cleanup(categories)
+        return ST.cleanup_preview(self._cleanup_plan)
+
+    def cleanup_execute(self, token):
+        if self._eng.busy(): raise ValueError('有工作正在執行，請稍後重新掃描')
+        if not getattr(self, '_cleanup_plan', None): raise ValueError('請先掃描清理項目')
+        result = ST.execute_cleanup(self._cleanup_plan, token); self._cleanup_plan = None
+        return result
+
+    def workflow_run(self, recipe, paths, params):
+        paths = list(dict.fromkeys(E.expand(paths)))
+        if not paths: raise ValueError('請先加入可以處理的素材')
+        params = params or {}
+        W.valid_profile(dict(name='交付', recipe=recipe, options=params))
+        opt = dict(self.base_opt(), **params); opt['recipe'] = recipe
+        opt['out_dir'] = params.get('out_dir') or self.base_opt().get('out_dir') or ''
+        return self._eng.submit_tool('workflow', paths, opt, next(r['name'] for r in W.RECIPES if r['id'] == recipe), together=True, heavy=True)
+
+    def workflow_save(self, profile):
+        value = W.valid_profile(profile)
+        value['id'] = profile.get('id') or uuid.uuid4().hex
+        profiles = [p for p in self._s.get('flow_profiles', []) if p.get('id') != value['id']]
+        if len(profiles) >= 100: raise ValueError('最多保存 100 個配方')
+        profiles.append(value); self._s['flow_profiles'] = profiles; self.save_settings({})
+        return self.workflow_schema()
+
+    def workflow_delete(self, pid):
+        self._s['flow_profiles'] = [p for p in self._s.get('flow_profiles', []) if p.get('id') != pid]; self.save_settings({})
+        return self.workflow_schema()
+
+    def workflow_export(self, pid):
+        profile = next((p for p in self._s.get('flow_profiles', []) if p.get('id') == pid), None)
+        if not profile: raise ValueError('請先保存配方')
+        paths = self._win.create_file_dialog(webview.SAVE_DIALOG, save_filename='交付配方.zdgc.json', file_types=('交付配方 (*.json)',))
+        if not paths: return ''
+        path = paths[0] if isinstance(paths, (list, tuple)) else paths
+        with open(path, 'w', encoding='utf-8') as fh: json.dump(dict(format='zdgc-workflow', version=1, profile=W.valid_profile(profile)), fh, ensure_ascii=False, indent=2)
+        return path
+
+    def workflow_import(self):
+        path = self.pick_file('交付配方 (*.json)')
+        if not path: return self.workflow_schema()
+        if os.path.getsize(path) > 1024 * 1024: raise ValueError('配方檔案過大')
+        with open(path, encoding='utf-8-sig') as fh: data = json.load(fh)
+        if data.get('format') != 'zdgc-workflow' or data.get('version') != 1: raise ValueError('不支援的配方檔案')
+        return self.workflow_save(W.valid_profile(data.get('profile')))
 
     # ---------- tools
     def tools_schema(self): return T.schema()
@@ -44,7 +121,7 @@ class Api:
     def run_tool(self, tool, paths, params):
         t = T.TOOL[tool]
         opt = dict(self.base_opt(), **(params or {}))
-        self._s.setdefault('tool_opts', {})[tool] = {k: v for k, v in (params or {}).items() if k not in ('rect',)}
+        self._s.setdefault('tool_opts', {})[tool] = W.clean_settings({k: v for k, v in (params or {}).items() if k not in ('rect',)})
         self.save_settings({})
         return self._eng.submit_tool(tool, paths, opt, t['name'], together=bool(t.get('together')), heavy=tool in T.HEAVY)
 
@@ -68,6 +145,14 @@ class Api:
         return dict(src='data:image/jpeg;base64,' + base64.b64encode(r.stdout).decode(), w=i['width'], h=i['height'], dur=d)
 
     def drives(self): return T.list_drives()
+
+    def compare_job(self, jid):
+        job = self._eng.jobs.get(jid)
+        if not job or job.state not in ('done', 'partial'): raise ValueError('請先完成轉檔')
+        if not os.path.isfile(job.output): raise ValueError('多檔案成品請開啟交付資料夾')
+        if any(E.classify(p)[0] not in ('image', 'video') for p in (job.files[0], job.output)):
+            raise ValueError('目前可預覽圖片及影片畫面')
+        return dict(before=self.preview(job.files[0]), after=self.preview(job.output), name=os.path.basename(job.output), validation=job.validation)
 
     # ---------- recorder / downloader / watcher
     def rec_info(self): return dict(audio=C.audio_devices(), monitors=monitors_safe(), opts=self._s.get('rec') or {})
@@ -107,16 +192,16 @@ class Api:
     def init(self):
         hw = E._HW if (E._HW is not None and not E._HW_BUSY) else []
         names = {'h264_nvenc': 'NVIDIA NVENC', 'h264_qsv': 'Intel QSV', 'h264_amf': 'AMD AMF'}
-        pc = dict(cores=os.cpu_count() or 0, ram=round(E.mem_gb(), 1), low=E.low_end())
-        return dict(version=VERSION, edition=EDITION, pc=pc, settings=self._s, hw=[names[h] for h in hw], ffmpeg=bool(E.FFMPEG), office=bool(E.SOFFICE), tools=T.schema(), ytdlp=bool(C.ytdlp()))
+        pc = dict(E.platform_info(), low=E.low_end())
+        return dict(version=VERSION, edition=EDITION, pc=pc, settings=self._s, hw=[names[h] for h in hw], ffmpeg=bool(E.FFMPEG), office=bool(E.SOFFICE), tools=T.schema(), ytdlp=bool(C.ytdlp()), workflows=self.workflow_schema())
 
     def save_settings(self, s):
-        self._s.update({k: v for k, v in (s or {}).items() if k != 'watch'})   # watch rules are owned by watch_set
-        try:                                   # write-then-rename: a crash or power cut never leaves a half-written settings file
+        with self._settings_lock:
+            self._s.update({k: v for k, v in (s or {}).items() if k not in ('watch', 'flow_profiles')})
+            self._s = W.clean_settings(self._s)
             tmp = SETTINGS + '.tmp'
             with open(tmp, 'w', encoding='utf-8') as fh: json.dump(self._s, fh, ensure_ascii=False, indent=1)
             os.replace(tmp, SETTINGS)
-        except Exception: pass
         return True
 
     # ---------- job actions
@@ -147,7 +232,7 @@ class Api:
     def media_info(self, paths):
         """Duration / resolution / HDR for the file lists (video and audio only)."""
         out = {}
-        for p in (paths or [])[:300]:
+        for p in (paths or []):
             if E.classify(p)[0] in ('video', 'audio'):
                 i = E.probe_info(p); out[p] = dict(dur=i['dur'], w=i['width'], h=i['height'], hdr=i.get('hdr', ''), a=i['acodec'])
         return out
@@ -185,13 +270,21 @@ class Api:
     def formats(self): return E.format_table()
     def startup_files(self):
         return self.describe([a for a in sys.argv[1:] if os.path.exists(a)])
-    def status(self): return dict(jobs=self._eng.status(), rec=self._rec.state(), shutdown=self.pending_shutdown)
-    def cancel(self, jid): self._eng.cancel(jid); return True
+    def status(self): return dict(jobs=self._eng.status(), rec=self._rec.state(), shutdown=self.pending_shutdown, finish=self._s.get('finish', 'sound'))
+    def cancel(self, jid):
+        if self._rec.job and self._rec.job.id == jid: self.rec_stop()
+        else: self._eng.cancel(jid)
+        return True
     def cancel_all(self):
         for j in self._eng.status():
             if j['state'] in ('queued', 'running'): self._eng.cancel(j['id'])
         return True
     def clear_done(self): self._eng.clear_done(); return True
+
+    def close(self):
+        self._watch.stop_event.set(); self._fin.stop_event.set()
+        if self._rec.state().get('rec'): self._rec.stop()
+        self._eng.shutdown(); self.save_settings({})
     def reveal(self, path):
         if path and os.path.exists(path):
             import subprocess
@@ -217,7 +310,7 @@ api = None   # created in __main__ after the single-instance check
 PIPE = r'\\.\pipe\ZhuanDangGongChang-' + (os.environ.get('USERNAME') or 'user')
 
 def forward_to_running():
-    """If 轉檔工廠 is already open, hand our files to it (and bring it to the front) instead of opening a 2nd window."""
+    """If 四維八德 is already open, hand our files to it (and bring it to the front) instead of opening a 2nd window."""
     if os.name != 'nt': return False
     try:
         from multiprocessing.connection import Client
@@ -329,8 +422,8 @@ def ensure_webview2():
         os.environ['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = fixed; return True
     import ctypes
     setup = E.bundled('MicrosoftEdgeWebview2Setup.exe')
-    msg = ('轉檔工廠的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n'
-           + ('按「確定」立即安裝（約 1 分鐘，需要網路），完成後會自動開啟轉檔工廠。' if os.path.isfile(setup) else '請到 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。'))
+    msg = ('四維八德的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n'
+           + ('按「確定」立即安裝（約 1 分鐘，需要網路），完成後會自動開啟四維八德。' if os.path.isfile(setup) else '請到 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。'))
     r = ctypes.windll.user32.MessageBoxW(None, msg, TITLE, 0x41 if os.path.isfile(setup) else 0x30)
     if r == 1 and os.path.isfile(setup):
         subprocess.run([setup, '/silent', '/install'])
@@ -338,9 +431,12 @@ def ensure_webview2():
     return False
 
 if __name__ == '__main__':
+    if os.name == 'nt' and not E.platform_info()['supported']:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, '這個版本支援 Windows 10／11 64 位元。請使用符合系統架構的版本。', TITLE, 0x30); sys.exit(1)
     if len(sys.argv) > 1 and sys.argv[1] == '--selftest':
         import selftest
-        selftest.main(sys.argv[2] if len(sys.argv) > 2 else None); sys.exit(0)
+        sys.exit(selftest.main(sys.argv[2] if len(sys.argv) > 2 else None))
     if forward_to_running(): sys.exit(0)
     if not ensure_webview2(): sys.exit(1)
     api = Api()
@@ -353,7 +449,7 @@ if __name__ == '__main__':
     try:
         api._win.events.resized += lambda width, height: remember(w=width, h=height)
         api._win.events.moved += lambda x, y: remember(x=x, y=y)
-        api._win.events.closing += lambda: api.save_settings({})
+        api._win.events.closing += api.close
     except Exception: pass
     webview.start(bind, api._win, gui='edgechromium', private_mode=True, debug=False)
     api.save_settings({})

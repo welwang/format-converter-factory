@@ -4,8 +4,10 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('src/ui', 'ui'), ('src/zhdict', 'zhdict')]
 binaries = []
-hiddenimports = ['tools', 'capture', 'zhconv', 'selftest']
+hiddenimports = ['tools', 'capture', 'workflows', 'validation', 'system_tools', 'disk_tools', 'zhconv', 'selftest', 'cryptography']
 hiddenimports += collect_submodules('webview')
+tmp_ret = collect_all('cryptography')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pypdfium2')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('rawpy')
@@ -20,7 +22,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['src/app.py'],
-    pathex=[],
+    pathex=['vendor'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

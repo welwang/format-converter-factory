@@ -1,4 +1,4 @@
-# 轉檔工廠：只上傳原始碼與文件（白名單）
+# 四維八德：只上傳原始碼與文件（白名單）
 /*
 !/.gitignore
 !/README.md
@@ -23,3 +23,9 @@ settings.json
 autosync/state/
 暫停自動同步.cmd
 恢復自動同步.cmd
+
+!/使用授權條款.md
+!/版本更新.md
+!/_build/tests/
+!/_build/requirements-lock.txt
+!/_build/requirements.txt

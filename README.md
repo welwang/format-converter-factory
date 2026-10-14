@@ -1,10 +1,15 @@
-# 轉檔工廠（Format Converter Factory）
+> 2.1.0 另加入電腦硬體短測、暫存清理預覽、Windows 磁碟檢查／修復與 Microsoft 檔案救援整合，詳見版本更新。
+
+> 2.1.0 新增交付工作台、可保存工具流程、成品檢查、HEVC／AV1、轉檔前後預覽、動畫與鍵盤操作改善。詳見「版本更新.md」。
+> 支援目標為 Windows 10／11 64 位元，包含低規格模式；ARM64、32 位元與舊版 Windows 的限制請見版本更新。
+
+# 四維八德（Format Converter Factory）
 
 > 一個**免安裝環境、離線執行**的 Windows 全能轉檔工具。把檔案拖進去，自動判斷類型、建議格式、一鍵轉好。
 > 目標：比「格式工廠」更快、更好用、看起來更現代。
 
 - 介面：繁體中文，白色／深色主題，圓角玻璃質感按鈕，低調的任務控制台風格
-- 執行：雙擊 `轉檔工廠.exe`，不需要 Python、瀏覽器分頁或命令列；所有轉檔引擎都放在 `tools\` 資料夾裡
+- 執行：雙擊 `四維八德.exe`，不需要 Python、瀏覽器分頁或命令列；所有轉檔引擎都放在 `tools\` 資料夾裡
 - 系統：Windows 10／11 x64（使用系統內建的 Microsoft Edge WebView2）
 - 授權：GPLv3（見 [LICENSE](LICENSE) 與 [授權說明.md](授權說明.md)）
 
@@ -81,7 +86,7 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 ## 架構
 
 ```
-┌──────────── 轉檔工廠.exe（PyInstaller onedir）────────────┐
+┌──────────── 四維八德.exe（PyInstaller onedir）────────────┐
 │ app.py      pywebview 視窗（Edge WebView2）＋ JS API       │
 │ ui/         單一 HTML/CSS/JS 介面（白／深色主題）          │
 │ engine.py   檔案分類、格式表、佇列（ThreadPool）、進度解析 │
@@ -106,8 +111,8 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 ## 資料夾結構
 
 ```
-轉檔工廠\
-├─ 轉檔工廠.exe              主程式（建置產物，不在 repo）
+四維八德\
+├─ 四維八德.exe              主程式（建置產物，不在 repo）
 ├─ _internal\                Python 執行環境與套件（建置產物，不在 repo）
 ├─ tools\                    內建引擎（不在 repo，見「從原始碼建置」）
 ├─ 輸出\                     安裝程式輸出（不在 repo）
@@ -131,9 +136,9 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 
 1. 安裝 Python 3.12，在 `_build` 建立虛擬環境：
    ```powershell
-   cd E:\轉檔工廠\_build
+   cd E:\四維八德\_build
    python -m venv venv
-   .\venv\Scripts\python -m pip install pywebview pyinstaller pillow pillow-heif pypdf pypdfium2 rawpy psd-tools resvg-py trimesh
+   .\venv\Scripts\python -m pip install -r requirements-lock.txt
    ```
 2. 準備 `tools\`（放在專案根目錄）：
    - `ffmpeg.exe`：gyan.dev full build（含 NVENC／QSV／AMF、libvpx、libopus、whisper 濾鏡）
@@ -148,11 +153,11 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
    ```powershell
    _build\inno\ISCC.exe _build\setup.iss
    ```
-   產出 `輸出\轉檔工廠安裝程式.exe`：繁體中文介面、可選安裝位置、免系統管理員（安裝到 `%LOCALAPPDATA%\Programs`）、桌面與開始功能表捷徑、右鍵「傳送到」、解除安裝程式。
+   產出 `輸出\四維八德安裝程式.exe`：繁體中文介面、可選安裝位置、免系統管理員（安裝到 `%LOCALAPPDATA%\Programs`）、桌面與開始功能表捷徑、右鍵「傳送到」、解除安裝程式。
 5. 自我測試（不開視窗，結果寫到 `selftest.log`）：
    ```powershell
    $env:PATH='C:\Windows\System32;C:\Windows'   # 模擬乾淨電腦
-   .\轉檔工廠.exe --selftest <放測試檔的資料夾>
+   .\四維八德.exe --selftest <放測試檔的資料夾>
    ```
 
 ## 大小
@@ -220,4 +225,4 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 
 安裝程式與免安裝版請到 [Releases](../../releases) 下載。
 
-> 本專案已設定自動同步：在 welsPC 修改原始碼後約 2～3 分鐘內會自動上傳到 GitHub（要暫停或恢復，請在「工作排程器」停用／啟用 ZDGC-AutoSync，或使用本機自備的暫停／恢復腳本）。
+> 自動同步為選用功能。目前本機 ZDGC-AutoSync 排程維持停用，路徑已改到四維八德資料夾；手動上傳不會啟用排程。若日後自行啟用，排程每 2 分鐘檢查原始碼變更並上傳。

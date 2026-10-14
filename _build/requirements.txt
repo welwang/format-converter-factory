@@ -1,0 +1,10 @@
+pywebview
+pyinstaller
+pillow
+pypdf
+pypdfium2
+rawpy
+psd-tools
+resvg-py
+trimesh
+cryptography

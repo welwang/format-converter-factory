@@ -85,3 +85,5 @@ powershell -File _build/build.ps1 -SkipPackages
 既有應用程式使用 GPLv3，新增 PDF 模組使用 AGPLv3。請閱讀 [LICENSE](LICENSE)、[COPYING.AGPL-3.0](COPYING.AGPL-3.0)、[第三方聲明](授權說明.md) 與 [散布說明](開源與散布說明.md)。Microsoft 元件、模型及其他依賴保留原授權；開源不自動免除第三方來源與著作權義務。
 
 本機文件處理不對接 iLovePDF，也未使用其介面素材、商標或程式碼。Logo 使用使用者提供的四維八德藍寶石圖檔。來源、設定與日誌分開；發布不包含下載歷史、私人文件、憑證私鑰或個人設定。
+
+正式安裝檔的安裝、中文路徑、元件校驗及解除安裝結果另見 [安裝包驗證](PACKAGE_VALIDATION.md)。

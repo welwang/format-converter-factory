@@ -48,3 +48,5 @@ autosync/state/
 !/source/
 /source/*
 !/source/來源清單.json
+
+!/PACKAGE_VALIDATION.md

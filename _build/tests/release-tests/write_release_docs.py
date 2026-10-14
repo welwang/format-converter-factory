@@ -4,7 +4,7 @@ R=Path(__file__).resolve().parent;stage=R/'release';assets=stage/'assets';assets
 shutil.copy2(R/'assets/logo.png',assets/'logo.png')
 for name in ['ui-pdf-catalogue.png','ui-pdf-editor.png']:shutil.copy2(R/name,assets/name)
 def read(name):return (R/name).read_text(encoding='utf-8-sig')
-sets=[('C 轉檔與工作控制','windows-engine-checks/results.json',30),('C／Python 內容比對','windows-engine-checks/equivalence.json',28),('C 編碼與加速選項','native-option-checks/results.json',6),('PDF 打包元件','frozen-pdf-final/results.json',12),('介面與表單','ui-results.json',93)]
+sets=[('C 轉檔與工作控制','windows-engine-checks/results.json',30),('C／Python 內容比對','windows-engine-checks/equivalence.json',28),('C 編碼與加速選項','native-option-checks/results.json',6),('PDF 打包元件','frozen-pdf-final/results.json',12),('介面與表單','ui-results.json',93),('Unicode 與來源網址限制','uri-results.json',8)]
 for title,filename,n in sets:
  data=json.loads(read(filename));assert len(data)==n and all(r['ok'] for r in data),(filename,data)
 logs=[('完整離線自我測試','frozen-final/selftest.log',81),('PDF 功能與內容','pdf-source-tests-final.log',46),('OCR 交付與下載','pdf-additional-tests-final.log',5),('工作流程與電腦工具','integration-tests-final.log',35),('視窗管線與對話框','protocol-tests-final.log',6),('特殊格式與設備邊界','feature-edge-tests-final.log',14)]
@@ -29,6 +29,7 @@ Windows AMD64，系統版本 10.0.26300，20 個 CPU 執行緒，已偵測 NVIDI
 ## 檢查到並修正的問題
 
 - C 建置腳本的路徑引號錯誤，已修正並完成 Windows 編譯。
+- 安裝在中文路徑時，WebView2 的 UTF-8 網址被誤判為其他頁面；已修正單次解碼並通過中文、空白、百分比、特殊字元與混合 Unicode 的檢查。
 - 有格式篩選條件的檔案對話框引用錯誤，已修正；開檔、另存與選資料夾往返測試均通過。
 - 短於監看間隔的工作可能漏掉完成通知；改為依工作建立時間記錄新完成工作，實際混合 C／Python 工作已收到一次完成通知。
 - JSON 數值精度不足可能影響時間判斷，改為保留雙精度數值。
@@ -79,7 +80,7 @@ report+='''
 
 ## 發布狀態
 
-來源與文件可公開。完整安裝包在 GitHub 先保存為草稿；FFmpeg full build 的所有間接程式庫與精確建置來源、部分既有引擎的完整對應來源仍待核實。不得將此狀態寫成「已排除所有法律風險」。GNU GPL 的二進位散布條件需提供相應來源，見 [GPLv3 第 6 條](https://www.gnu.org/licenses/gpl-3.0.html#section6) 與 [GNU 授權常見問題](https://www.gnu.org/licenses/gpl-faq.html#SourceAndBinaryOnDifferentSites)。詳細清單見 source/來源清單.json 與「開源與散布說明.md」。
+安裝包、應用程式來源與文件在 GitHub 公開發布；FFmpeg full build 的所有間接程式庫與精確建置來源、部分既有引擎的完整對應來源仍待核實。不得將此狀態寫成「已排除所有法律風險」。GNU GPL 的二進位散布條件需提供相應來源，見 [GPLv3 第 6 條](https://www.gnu.org/licenses/gpl-3.0.html#section6) 與 [GNU 授權常見問題](https://www.gnu.org/licenses/gpl-faq.html#SourceAndBinaryOnDifferentSites)。詳細清單見 source/來源清單.json 與「開源與散布說明.md」。
 '''
 (stage/'TEST_RESULTS.md').write_text(report,encoding='utf-8')
 css='''body{margin:0;background:#f3f6fb;color:#192b44;font:16px/1.75 "Segoe UI","Microsoft JhengHei",sans-serif}main{max-width:1080px;margin:36px auto;padding:32px;background:white;border-radius:20px;box-shadow:0 12px 42px #143d5d12}h1{font-size:32px}h2{margin-top:36px;border-top:1px solid #e0e8f2;padding-top:24px}h3{margin-top:28px}table{width:100%;border-collapse:collapse;font-size:14px;margin:20px 0}td,th{padding:10px 12px;text-align:left;border-bottom:1px solid #e4eaf2}th{background:#eef5ff;color:#164985}a{color:#006ad3}img{width:120px;height:120px;object-fit:contain;border-radius:24px}li{margin:8px 0}.lead{color:#376c91;background:#eaf4ff;padding:20px;border-radius:12px}@media(max-width:750px){main{margin:0;padding:18px;border-radius:0}table{font-size:12px;display:block;overflow:auto}}'''
@@ -109,7 +110,7 @@ readme='''<p align="center"><img src="assets/logo.png" width="160" alt="四維�
 
 開源的 Windows 本機轉檔與文件工具。影音、圖片、Office、電子書、壓縮檔、字幕與 PDF 在自己的電腦處理；OCR、字幕辨識、摘要與翻譯的離線模型隨完整安裝包附帶。無需 iLovePDF 帳號或 API，PDF 功能自行實作。
 
-**2.3.0 狀態：來源、詳細說明與測試報告已更新。完整安裝包先保存在 GitHub 發布草稿；第三方對應來源散布審核仍未完成。**
+**2.3.0 狀態：已公開發布。完整安裝包與來源封裝可從版本發布頁下載；第三方對應來源散布審核仍未完成。**
 
 [版本發布頁](https://github.com/welwang/format-converter-factory/releases) · [詳細使用說明](使用說明.md) · [完整測試結果](TEST_RESULTS.md) · [PDF 功能清單](PDF功能清單.md) · [開源與散布條件](開源與散布說明.md)
 
@@ -163,7 +164,7 @@ readme='''<p align="center"><img src="assets/logo.png" width="160" alt="四維�
 
 完整報告：[TEST_RESULTS.md](TEST_RESULTS.md)。程式「關於 → 測試結果」亦可離線開啟報告。
 
-最終 357／357 個已執行案例通過、0 失敗；82 個工具表單、446 種狀態已檢查。涵蓋實際 C／Python 轉檔比對、Windows 原生視窗橋接、打包後 OCR／AI／簽章、下載完成檔案、硬體小型測試、清理邊界與命令注入防護。這不等於所有硬體、特殊文件或 AI 語意結果都已驗證；完整未驗證範圍列於報告。
+最終 365／365 個已執行案例通過、0 失敗；82 個工具表單、446 種狀態已檢查。涵蓋實際 C／Python 轉檔比對、Windows 原生視窗橋接、打包後 OCR／AI／簽章、下載完成檔案、硬體小型測試、清理邊界與命令注入防護。這不等於所有硬體、特殊文件或 AI 語意結果都已驗證；完整未驗證範圍列於報告。
 
 ## 原始碼建置
 

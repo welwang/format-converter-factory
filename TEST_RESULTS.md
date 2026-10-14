@@ -2,7 +2,7 @@
 
 ![四維八德藍寶石 Logo](assets/logo.png)
 
-測試日期：2026-10-14（Asia/Taipei）。最終已執行測試 **357／357 通過，0 項失敗**。介面涵蓋 82 個工具、446 種表單狀態。相同功能在不同層的檢查分別計數；數字不是不重複的功能數，也不表示所有電腦、所有文件或 AI 輸出都沒有錯誤。
+測試日期：2026-10-14（Asia/Taipei）。最終已執行測試 **365／365 通過，0 項失敗**。介面涵蓋 82 個工具、446 種表單狀態。相同功能在不同層的檢查分別計數；數字不是不重複的功能數，也不表示所有電腦、所有文件或 AI 輸出都沒有錯誤。
 
 ## 測試環境與方法
 
@@ -15,6 +15,7 @@ Windows AMD64，系統版本 10.0.26300，20 個 CPU 執行緒，已偵測 NVIDI
 | C 編碼與加速選項 | 6/6 | 0 |
 | PDF 打包元件 | 12/12 | 0 |
 | 介面與表單 | 93/93 | 0 |
+| Unicode 與來源網址限制 | 8/8 | 0 |
 | 完整離線自我測試 | 81/81 | 0 |
 | PDF 功能與內容 | 46/46 | 0 |
 | OCR 交付與下載 | 5/5 | 0 |
@@ -26,6 +27,7 @@ Windows AMD64，系統版本 10.0.26300，20 個 CPU 執行緒，已偵測 NVIDI
 ## 檢查到並修正的問題
 
 - C 建置腳本的路徑引號錯誤，已修正並完成 Windows 編譯。
+- 安裝在中文路徑時，WebView2 的 UTF-8 網址被誤判為其他頁面；已修正單次解碼並通過中文、空白、百分比、特殊字元與混合 Unicode 的檢查。
 - 有格式篩選條件的檔案對話框引用錯誤，已修正；開檔、另存與選資料夾往返測試均通過。
 - 短於監看間隔的工作可能漏掉完成通知；改為依工作建立時間記錄新完成工作，實際混合 C／Python 工作已收到一次完成通知。
 - JSON 數值精度不足可能影響時間判斷，改為保留雙精度數值。
@@ -238,6 +240,19 @@ AI 測試包含本機字幕、Word 逐字稿、快速摘錄與離線模型會議
 | theme_light | 通過 |  |
 | logo_loaded | 通過 |  |
 | javascript_no_errors | 通過 |  |
+
+### Unicode 與來源網址限制
+
+| 項目 | 結果 | 補充 |
+|---|---|---|
+| ascii_path | 通過 |  |
+| chinese_path | 通過 |  |
+| chinese_with_spaces | 通過 |  |
+| literal_percent_and_hash | 通過 |  |
+| mixed_unicode | 通過 |  |
+| reject_https | 通過 |  |
+| reject_other_local_page | 通過 |  |
+| reject_remote_file_host | 通過 |  |
 
 ### 完整離線自我測試
 
@@ -472,4 +487,4 @@ AI 測試包含本機字幕、Word 逐字稿、快速摘錄與離線模型會議
 
 ## 發布狀態
 
-來源與文件可公開。完整安裝包在 GitHub 先保存為草稿；FFmpeg full build 的所有間接程式庫與精確建置來源、部分既有引擎的完整對應來源仍待核實。不得將此狀態寫成「已排除所有法律風險」。GNU GPL 的二進位散布條件需提供相應來源，見 [GPLv3 第 6 條](https://www.gnu.org/licenses/gpl-3.0.html#section6) 與 [GNU 授權常見問題](https://www.gnu.org/licenses/gpl-faq.html#SourceAndBinaryOnDifferentSites)。詳細清單見 source/來源清單.json 與「開源與散布說明.md」。
+安裝包、應用程式來源與文件在 GitHub 公開發布；FFmpeg full build 的所有間接程式庫與精確建置來源、部分既有引擎的完整對應來源仍待核實。不得將此狀態寫成「已排除所有法律風險」。GNU GPL 的二進位散布條件需提供相應來源，見 [GPLv3 第 6 條](https://www.gnu.org/licenses/gpl-3.0.html#section6) 與 [GNU 授權常見問題](https://www.gnu.org/licenses/gpl-faq.html#SourceAndBinaryOnDifferentSites)。詳細清單見 source/來源清單.json 與「開源與散布說明.md」。

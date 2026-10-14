@@ -545,13 +545,26 @@ static void collect_dropped(ICoreWebView2WebMessageReceivedEventArgs *args)
     free(list.p);
 }
 
+static BOOL trusted_ui_uri(const wchar_t *uri)
+{
+    if (!uri || _wcsnicmp(uri,L"file:",5)) return FALSE;
+    wchar_t path[MAX_PATH * 3], decoded[MAX_PATH]; DWORD length = MAX_PATH * 3;
+    if (FAILED(PathCreateFromUrlW(uri,path,&length,0))) return FALSE;
+    if (!_wcsicmp(path,g_pagePath)) return TRUE;
+    /* WebView2 percent-escapes Unicode as UTF-8; PathCreateFromUrlW unescapes bytes as Latin-1.
+       Decode those bytes once. Unescaping the URL twice would corrupt literal %xx filenames. */
+    char bytes[MAX_PATH * 3]; size_t n = wcslen(path);
+    if (n >= sizeof bytes) return FALSE;
+    for (size_t i=0;i<n;i++) { if (path[i]>255) return FALSE; bytes[i]=(char)path[i]; }
+    bytes[n]=0;
+    return MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,bytes,-1,decoded,MAX_PATH)>0 && !_wcsicmp(decoded,g_pagePath);
+}
+
 static HRESULT STDMETHODCALLTYPE msg_invoke(ICoreWebView2WebMessageReceivedEventHandler *This, ICoreWebView2 *sender, ICoreWebView2WebMessageReceivedEventArgs *args)
 {
     (void)This; (void)sender;
     LPWSTR source = NULL;
-    wchar_t sourcePath[MAX_PATH]; DWORD sourceLength = MAX_PATH;
-    BOOL trusted = SUCCEEDED(ICoreWebView2WebMessageReceivedEventArgs_get_Source(args, &source)) && source &&
-        SUCCEEDED(PathCreateFromUrlW(source, sourcePath, &sourceLength, 0)) && !_wcsicmp(sourcePath, g_pagePath);
+    BOOL trusted = SUCCEEDED(ICoreWebView2WebMessageReceivedEventArgs_get_Source(args, &source)) && trusted_ui_uri(source);
     if (source) CoTaskMemFree(source);
     if (!trusted) return S_OK;
     LPWSTR msg = NULL;
@@ -604,9 +617,8 @@ static HRESULT STDMETHODCALLTYPE nav_qi(ICoreWebView2NavigationStartingEventHand
 { return qi(This, iid, out, &IID_ICoreWebView2NavigationStartingEventHandler); }
 static HRESULT STDMETHODCALLTYPE nav_invoke(ICoreWebView2NavigationStartingEventHandler *This, ICoreWebView2 *sender, ICoreWebView2NavigationStartingEventArgs *args)
 {
-    (void)This; (void)sender; LPWSTR uri = NULL; wchar_t path[MAX_PATH]; DWORD length = MAX_PATH;
-    BOOL trusted = SUCCEEDED(ICoreWebView2NavigationStartingEventArgs_get_Uri(args, &uri)) && uri &&
-        SUCCEEDED(PathCreateFromUrlW(uri, path, &length, 0)) && !_wcsicmp(path, g_pagePath);
+    (void)This; (void)sender; LPWSTR uri = NULL;
+    BOOL trusted = SUCCEEDED(ICoreWebView2NavigationStartingEventArgs_get_Uri(args, &uri)) && trusted_ui_uri(uri);
     if (!trusted) ICoreWebView2NavigationStartingEventArgs_put_Cancel(args, TRUE);
     if (uri) CoTaskMemFree(uri); return S_OK;
 }

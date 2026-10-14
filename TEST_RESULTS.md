@@ -514,4 +514,4 @@ AI 測試包含本機字幕、Word 逐字稿、快速摘錄與離線模型會議
 
 ## 發布狀態
 
-安裝包、應用程式來源與文件在 GitHub 公開發布；FFmpeg full build 的所有間接程式庫與精確建置來源、部分既有引擎的完整對應來源仍待核實。不得將此狀態寫成「已排除所有法律風險」。GNU GPL 的二進位散布條件需提供相應來源，見 [GPLv3 第 6 條](https://www.gnu.org/licenses/gpl-3.0.html#section6) 與 [GNU 授權常見問題](https://www.gnu.org/licenses/gpl-faq.html#SourceAndBinaryOnDifferentSites)。詳細清單見 source/來源清單.json 與「開源與散布說明.md」。
+安裝包與文件在 GitHub 公開發布；應用程式原始碼保留在公開儲存庫，2.3.2 發布頁的來源 ZIP 已移除。FFmpeg full build 的所有間接程式庫與精確建置來源、部分既有引擎的完整對應來源仍待核實。不得將此狀態寫成「已排除所有法律風險」。GNU GPL 的二進位散布條件需提供相應來源，見 [GPLv3 第 6 條](https://www.gnu.org/licenses/gpl-3.0.html#section6) 與 [GNU 授權常見問題](https://www.gnu.org/licenses/gpl-faq.html#SourceAndBinaryOnDifferentSites)。詳細清單見 source/來源清單.json 與「開源與散布說明.md」。

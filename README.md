@@ -4,7 +4,7 @@
 
 開源的 Windows 本機轉檔與文件工具。影音、圖片、Office、電子書、壓縮檔、字幕與 PDF 在自己的電腦處理；OCR、字幕辨識、摘要與翻譯的離線模型隨完整安裝包附帶。無需 iLovePDF 帳號或 API，PDF 功能自行實作。
 
-**2.3.2 狀態：已公開發布。完整安裝包與來源封裝可從版本發布頁下載；第三方對應來源散布審核仍未完成。**
+**2.3.2 狀態：已公開發布。完整安裝包與 Logo 可從版本發布頁下載；應用程式原始碼保留在本公開儲存庫，2.3.2 來源 ZIP 已移除。第三方對應來源散布審核仍未完成。**
 
 [版本發布頁](https://github.com/welwang/format-converter-factory/releases) · [詳細使用說明](使用說明.md) · [完整測試結果](TEST_RESULTS.md) · [PDF 功能清單](PDF功能清單.md) · [開源與散布條件](開源與散布說明.md)
 
@@ -45,7 +45,7 @@
 
 ## 安裝包精簡
 
-完整離線功能與三個模型位元內容保留。已測試的非執行資源與重複 DLL 移除，壓縮字典維持 64 MB，來源封裝在相同版本發布頁獨立下載；執行程式不需要來源封裝。
+完整離線功能與三個模型位元內容保留。已測試的非執行資源與重複 DLL 移除，壓縮字典維持 64 MB。程式原始碼保留在公開儲存庫；2.3.2 發布頁不再提供來源 ZIP。
 
 ## 2.3.2 架構
 
@@ -63,26 +63,6 @@
 完整報告：[TEST_RESULTS.md](TEST_RESULTS.md)。程式「關於 → 測試結果」亦可離線開啟報告。
 
 最終 374／374 個已執行案例通過、0 失敗；82 個工具表單、446 種狀態已檢查。涵蓋實際 C／Python 轉檔比對、Windows 原生視窗橋接、打包後 OCR／AI／簽章、下載完成檔案、硬體小型測試、清理邊界與命令注入防護。這不等於所有硬體、特殊文件或 AI 語意結果都已驗證；完整未驗證範圍列於報告。
-
-## 原始碼建置
-
-需 Windows x64、Visual Studio Build Tools 的 C++ 桌面開發元件、Python 3.12 與 Inno Setup。C 建置首次取得指定 WebView2 SDK，需要網路；日常本機處理不需要下載 SDK。
-
-```powershell
-python -m venv _build/venv
-_build/venv/Scripts/python -m pip install -r _build/requirements-lock.txt
-powershell -File _build/shell/build_shell.ps1
-powershell -File _build/build.ps1 -SkipPackages
-```
-
-完整二進位建置另需 `tools` 的匹配版本、模型與授權來源；Git 不儲存數 GB 的引擎或私人設定。`_build/tests/release-tests` 保留此次測試工具；執行環境與測試資料夾需依各腳本設定。自我測試自行產生素材：
-
-```powershell
-.\四維八德.exe --selftest .\selftest --ai --no-open
-.\四維八德.exe --pdf-selftest .\pdf-selftest
-```
-
-自我測試會測試 Python 元件；C 引擎另以 `engine_test_cli.c` 驗證。`--rec` 會擷取真實螢幕，本次未使用該選項。
 
 ## 授權與隱私
 

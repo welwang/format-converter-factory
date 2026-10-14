@@ -220,3 +220,5 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 本專案原始碼以 **GNU GPLv3** 釋出（因內附的 FFmpeg 完整版為 GPLv3）。內附的第三方引擎各自依其授權散布：FFmpeg（GPLv3）、LibreOffice（MPL 2.0）、Calibre（GPLv3）、Pandoc（GPLv2+）、7-Zip（LGPL＋unRAR 限制）、yt-dlp（Unlicense）、OpenCC 詞庫（Apache-2.0）以及多個 Python 套件。完整清單與原始碼連結見 [授權說明.md](授權說明.md)。
 
 安裝程式與免安裝版請到 [Releases](../../releases) 下載。
+
+> 本專案已設定自動同步：在 welsPC 修改原始碼後約 2～3 分鐘內會自動上傳到 GitHub（暫停／恢復請執行根目錄的 暫停自動同步.cmd／恢復自動同步.cmd）。

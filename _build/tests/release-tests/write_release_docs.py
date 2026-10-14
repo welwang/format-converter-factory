@@ -4,20 +4,20 @@ R=Path(__file__).resolve().parent;stage=R/'release';assets=stage/'assets';assets
 shutil.copy2(R/'assets/logo.png',assets/'logo.png')
 for name in ['ui-pdf-catalogue.png','ui-pdf-editor.png']:shutil.copy2(R/name,assets/name)
 def read(name):return (R/name).read_text(encoding='utf-8-sig')
-sets=[('C 轉檔與工作控制','windows-engine-checks/results.json',30),('C／Python 內容比對','windows-engine-checks/equivalence.json',28),('C 編碼與加速選項','native-option-checks/results.json',6),('PDF 打包元件','frozen-pdf-final/results.json',12),('介面與表單','ui-results.json',93),('Unicode 與來源網址限制','uri-results.json',8)]
+sets=[('C 轉檔與工作控制','windows-engine-checks/results.json',30),('C／Python 內容比對','windows-engine-checks/equivalence.json',28),('C 編碼與加速選項','native-option-checks/results.json',6),('PDF 打包元件','pdf-frozen/results.json',12),('介面與表單','ui-results.json',96),('Unicode 與來源網址限制','uri-results.json',8),('精簡資源與模型內容','size-content-tests.json',4),('新版圖示資源','logo-resource-results.json',2)]
 for title,filename,n in sets:
  data=json.loads(read(filename));assert len(data)==n and all(r['ok'] for r in data),(filename,data)
-logs=[('完整離線自我測試','frozen-final/selftest.log',81),('PDF 功能與內容','pdf-source-tests-final.log',46),('OCR 交付與下載','pdf-additional-tests-final.log',5),('工作流程與電腦工具','integration-tests-final.log',35),('視窗管線與對話框','protocol-tests-final.log',6),('特殊格式與設備邊界','feature-edge-tests-final.log',14)]
+logs=[('完整離線自我測試','selftest-final/selftest.log',81),('PDF 功能與內容','pdf-tests.log',46),('OCR 交付與下載','additional-tests.log',5),('工作流程與電腦工具','integration-tests.log',35),('視窗管線與對話框','protocol-tests.log',6),('特殊格式與設備邊界','feature-tests.log',14)]
 for title,f,n in logs:
  s=read(f);assert 'FAILED (' not in s and not re.search(r'^FAIL\s',s,re.M),f
  assert (f'結果：{n} / {n} 通過' in s if n==81 else f'Ran {n} tests' in s and '\nOK' in s),f
 smoke=json.loads(read('native-window-smoke.json'));assert smoke['ok'] and smoke['completion_notifications']>=1,smoke
 rows=[(t,n) for t,_,n in sets]+[(t,n) for t,_,n in logs]+[('Windows 原生視窗整合',1)];total=sum(n for _,n in rows)
-report=f'''# 四維八德 2.3.0 測試報告
+report=f'''# 四維八德 2.3.2 測試報告
 
 ![四維八德藍寶石 Logo](assets/logo.png)
 
-測試日期：2026-10-14（Asia/Taipei）。最終已執行測試 **{total}／{total} 通過，0 項失敗**。介面涵蓋 82 個工具、446 種表單狀態。相同功能在不同層的檢查分別計數；數字不是不重複的功能數，也不表示所有電腦、所有文件或 AI 輸出都沒有錯誤。
+測試日期：2026-10-15（Asia/Taipei）。最終已執行測試 **{total}／{total} 通過，0 項失敗**。介面涵蓋 82 個工具、446 種表單狀態。相同功能在不同層的檢查分別計數；數字不是不重複的功能數，也不表示所有電腦、所有文件或 AI 輸出都沒有錯誤。
 
 ## 測試環境與方法
 
@@ -26,7 +26,13 @@ Windows AMD64，系統版本 10.0.26300，20 個 CPU 執行緒，已偵測 NVIDI
 | 測試組 | 通過 | 失敗 |
 |---|---:|---:|
 '''+''.join(f'| {t} | {n}/{n} | 0 |\n' for t,n in rows)+'''
-## 檢查到並修正的問題
+## 2.3.2 Logo 更新與回歸驗證
+
+側邊欄 34 px 與拖放區 44 px 使用無節點小圖，關於視窗 84 px 保留完整版。新增三項介面位置／尺寸／載入檢查及兩個程式的 ICO 資源雜湊比對。小尺寸高度配置仍依既有響應式樣式調整。本輪完整重跑原有測試，沒有把前版結果當作本版新測試。安裝包圖示與實際安装另在打包後驗證。
+
+首次在沙箱執行時，暫存路徑权限阻擋部分外部引擎，已改在正常 Windows 環境重新執行；受阻結果未計為通過。一次共用測試暫存狀態下 CSV 轉 XLSX 未完成，最終完整離線測試使用獨立乾淨資料夾重跑。
+
+## 既有修正與回歸驗證
 
 - C 建置腳本的路徑引號錯誤，已修正並完成 Windows 編譯。
 - 安裝在中文路徑時，WebView2 的 UTF-8 網址被誤判為其他頁面；已修正單次解碼並通過中文、空白、百分比、特殊字元與混合 Unicode 的檢查。
@@ -103,20 +109,20 @@ for line in lines:
   if not in_list:parts.append('<ul>');in_list=True
   parts.append('<li>'+inline(line[2:])+'</li>')
  elif line:parts.append('<p>'+inline(line)+'</p>')
-(stage/'測試報告.html').write_text('<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>四維八德 2.3.0 測試報告</title><style>'+css+'</style><main>'+''.join(parts)+'</main></html>',encoding='utf-8')
+(stage/'測試報告.html').write_text('<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>四維八德 2.3.2 測試報告</title><style>'+css+'</style><main>'+''.join(parts)+'</main></html>',encoding='utf-8')
 readme='''<p align="center"><img src="assets/logo.png" width="160" alt="四維八德藍寶石 Logo"></p>
 
 # 四維八德
 
 開源的 Windows 本機轉檔與文件工具。影音、圖片、Office、電子書、壓縮檔、字幕與 PDF 在自己的電腦處理；OCR、字幕辨識、摘要與翻譯的離線模型隨完整安裝包附帶。無需 iLovePDF 帳號或 API，PDF 功能自行實作。
 
-**2.3.0 狀態：已公開發布。完整安裝包與來源封裝可從版本發布頁下載；第三方對應來源散布審核仍未完成。**
+**2.3.2 狀態：已公開發布。完整安裝包與來源封裝可從版本發布頁下載；第三方對應來源散布審核仍未完成。**
 
 [版本發布頁](https://github.com/welwang/format-converter-factory/releases) · [詳細使用說明](使用說明.md) · [完整測試結果](TEST_RESULTS.md) · [PDF 功能清單](PDF功能清單.md) · [開源與散布條件](開源與散布說明.md)
 
 ## 安裝與系統需求
 
-執行 `四維八德_2.3.0_離線安裝程式.exe`，選擇位置與捷徑，完成後開啟四維八德。預設裝到目前使用者的程式資料夾；不需要安裝 Python、Microsoft Office 或獨立轉檔工具。缺少 WebView2 時可使用隨附的離線安裝程式；系統元件安裝依 Windows 權限決定。
+執行 `四維八德_2.3.2_離線安裝程式.exe`，選擇位置與捷徑，完成後開啟四維八德。預設裝到目前使用者的程式資料夾；不需要安裝 Python、Microsoft Office 或獨立轉檔工具。缺少 WebView2 時可使用隨附的離線安裝程式；系統元件安裝依 Windows 權限決定。
 
 - 目標平台：Windows 10／11，x64；32 位元與 Windows 7／8 不在本版支援範圍。
 - 建議至少 4 GB RAM；8 GB 以上較合適，AI 與大檔案可能需要更多記憶體。本版尚未在實體 4 GB 電腦完成全功能驗證。
@@ -149,7 +155,11 @@ readme='''<p align="center"><img src="assets/logo.png" width="160" alt="四維�
 
 ![PDF 視覺編輯](assets/ui-pdf-editor.png)
 
-## 2.3.0 架構
+## 安裝包精簡
+
+完整離線功能與三個模型位元內容保留。已測試的非執行資源與重複 DLL 移除，壓縮字典維持 64 MB，來源封裝在相同版本發布頁獨立下載；執行程式不需要來源封裝。
+
+## 2.3.2 架構
 
 | 元件 | 負責範圍 |
 |---|---|
@@ -164,7 +174,7 @@ readme='''<p align="center"><img src="assets/logo.png" width="160" alt="四維�
 
 完整報告：[TEST_RESULTS.md](TEST_RESULTS.md)。程式「關於 → 測試結果」亦可離線開啟報告。
 
-最終 365／365 個已執行案例通過、0 失敗；82 個工具表單、446 種狀態已檢查。涵蓋實際 C／Python 轉檔比對、Windows 原生視窗橋接、打包後 OCR／AI／簽章、下載完成檔案、硬體小型測試、清理邊界與命令注入防護。這不等於所有硬體、特殊文件或 AI 語意結果都已驗證；完整未驗證範圍列於報告。
+最終 374／374 個已執行案例通過、0 失敗；82 個工具表單、446 種狀態已檢查。涵蓋實際 C／Python 轉檔比對、Windows 原生視窗橋接、打包後 OCR／AI／簽章、下載完成檔案、硬體小型測試、清理邊界與命令注入防護。這不等於所有硬體、特殊文件或 AI 語意結果都已驗證；完整未驗證範圍列於報告。
 
 ## 原始碼建置
 
@@ -193,5 +203,5 @@ powershell -File _build/build.ps1 -SkipPackages
 本機文件處理不對接 iLovePDF，也未使用其介面素材、商標或程式碼。Logo 使用使用者提供的四維八德藍寶石圖檔。來源、設定與日誌分開；發布不包含下載歷史、私人文件、憑證私鑰或個人設定。
 '''
 (stage/'README.md').write_text(readme,encoding='utf-8')
-(R/'report-summary.json').write_text(json.dumps(dict(version='2.3.0',passed=total,failed=0,groups=[dict(name=t,passed=n) for t,n in rows],ui_forms=82,ui_variants=446,physical_validation_complete=False,distribution_audit_complete=False),ensure_ascii=False,indent=2),encoding='utf-8')
+(R/'report-summary.json').write_text(json.dumps(dict(version='2.3.2',passed=total,failed=0,groups=[dict(name=t,passed=n) for t,n in rows],ui_forms=82,ui_variants=446,physical_validation_complete=False,distribution_audit_complete=False),ensure_ascii=False,indent=2),encoding='utf-8')
 print('Verified report cases:',total)

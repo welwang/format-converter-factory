@@ -1,8 +1,8 @@
-# 四維八德 2.3.1 測試報告
+# 四維八德 2.3.2 測試報告
 
 ![四維八德藍寶石 Logo](assets/logo.png)
 
-測試日期：2026-10-14（Asia/Taipei）。最終已執行測試 **369／369 通過，0 項失敗**。介面涵蓋 82 個工具、446 種表單狀態。相同功能在不同層的檢查分別計數；數字不是不重複的功能數，也不表示所有電腦、所有文件或 AI 輸出都沒有錯誤。
+測試日期：2026-10-15（Asia/Taipei）。最終已執行測試 **374／374 通過，0 項失敗**。介面涵蓋 82 個工具、446 種表單狀態。相同功能在不同層的檢查分別計數；數字不是不重複的功能數，也不表示所有電腦、所有文件或 AI 輸出都沒有錯誤。
 
 ## 測試環境與方法
 
@@ -14,9 +14,10 @@ Windows AMD64，系統版本 10.0.26300，20 個 CPU 執行緒，已偵測 NVIDI
 | C／Python 內容比對 | 28/28 | 0 |
 | C 編碼與加速選項 | 6/6 | 0 |
 | PDF 打包元件 | 12/12 | 0 |
-| 介面與表單 | 93/93 | 0 |
+| 介面與表單 | 96/96 | 0 |
 | Unicode 與來源網址限制 | 8/8 | 0 |
 | 精簡資源與模型內容 | 4/4 | 0 |
+| 新版圖示資源 | 2/2 | 0 |
 | 完整離線自我測試 | 81/81 | 0 |
 | PDF 功能與內容 | 46/46 | 0 |
 | OCR 交付與下載 | 5/5 | 0 |
@@ -25,7 +26,13 @@ Windows AMD64，系統版本 10.0.26300，20 個 CPU 執行緒，已偵測 NVIDI
 | 特殊格式與設備邊界 | 14/14 | 0 |
 | Windows 原生視窗整合 | 1/1 | 0 |
 
-## 檢查到並修正的問題
+## 2.3.2 Logo 更新與回歸驗證
+
+側邊欄 34 px 與拖放區 44 px 使用無節點小圖，關於視窗 84 px 保留完整版。新增三項介面位置／尺寸／載入檢查及兩個程式的 ICO 資源雜湊比對。小尺寸高度配置仍依既有響應式樣式調整。本輪完整重跑原有測試，沒有把前版結果當作本版新測試。安裝包圖示與實際安装另在打包後驗證。
+
+首次在沙箱執行時，暫存路徑权限阻擋部分外部引擎，已改在正常 Windows 環境重新執行；受阻結果未計為通過。一次共用測試暫存狀態下 CSV 轉 XLSX 未完成，最終完整離線測試使用獨立乾淨資料夾重跑。
+
+## 既有修正與回歸驗證
 
 - C 建置腳本的路徑引號錯誤，已修正並完成 Windows 編譯。
 - 安裝在中文路徑時，WebView2 的 UTF-8 網址被誤判為其他頁面；已修正單次解碼並通過中文、空白、百分比、特殊字元與混合 Unicode 的檢查。
@@ -240,6 +247,9 @@ AI 測試包含本機字幕、Word 逐字稿、快速摘錄與離線模型會議
 | theme_dark | 通過 |  |
 | theme_light | 通過 |  |
 | logo_loaded | 通過 |  |
+| sidebar_small_logo | 通過 |  |
+| drop_small_logo | 通過 |  |
+| about_full_logo | 通過 |  |
 | javascript_no_errors | 通過 |  |
 
 ### Unicode 與來源網址限制
@@ -248,12 +258,12 @@ AI 測試包含本機字幕、Word 逐字稿、快速摘錄與離線模型會議
 |---|---|---|
 | ascii_path | 通過 |  |
 | chinese_path | 通過 |  |
-| chinese_with_spaces | 通過 |  |
-| literal_percent_and_hash | 通過 |  |
-| mixed_unicode | 通過 |  |
+| space_path | 通過 |  |
+| literal_percent_hash_path | 通過 |  |
+| mixed_unicode_path | 通過 |  |
 | reject_https | 通過 |  |
-| reject_other_local_page | 通過 |  |
-| reject_remote_file_host | 通過 |  |
+| reject_other_page | 通過 |  |
+| reject_remote_host | 通過 |  |
 
 ### 精簡資源與模型內容
 
@@ -263,6 +273,13 @@ AI 測試包含本機字幕、Word 逐字稿、快速摘錄與離線模型會議
 | pdf-ai/model.gguf | 通過 |  |
 | models/ggml-base.bin | 通過 |  |
 | models/ggml-silero-v5.1.2.bin | 通過 |  |
+
+### 新版圖示資源
+
+| 項目 | 結果 | 補充 |
+|---|---|---|
+| 四維八德.exe_new_icon_resources | 通過 | 7 ICO entries embedded; payload SHA-256 matches |
+| swbd-core.exe_new_icon_resources | 通過 | 7 ICO entries embedded; payload SHA-256 matches |
 
 ### 完整離線自我測試
 

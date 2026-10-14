@@ -4,8 +4,8 @@
 IDI_APPICON ICON "..\\logo.ico"
 1 RT_MANIFEST "app.manifest"
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,3,1,0
- PRODUCTVERSION 2,3,1,0
+ FILEVERSION 2,3,2,0
+ PRODUCTVERSION 2,3,2,0
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
 BEGIN
@@ -15,9 +15,9 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Wel Wang"
       VALUE "FileDescription", "四維八德"
-      VALUE "FileVersion", "2.3.1"
+      VALUE "FileVersion", "2.3.2"
       VALUE "ProductName", "四維八德"
-      VALUE "ProductVersion", "2.3.1"
+      VALUE "ProductVersion", "2.3.2"
       VALUE "OriginalFilename", "四維八德.exe"
       VALUE "LegalCopyright", "GPLv3 / AGPLv3"
     END

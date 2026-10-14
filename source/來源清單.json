@@ -1,5 +1,5 @@
 {
-  "version": "2.3.1",
+  "version": "2.3.2",
   "application_source": "application/",
   "application_licenses": [
     "GPL-3.0",
@@ -45,6 +45,6 @@
     "license": "tools/WebView2-SDK-LICENSE.txt",
     "notice": "tools/WebView2-SDK-NOTICE.txt"
   },
-  "source_download": "https://github.com/welwang/format-converter-factory/releases/tag/v2.3.1",
+  "source_download": "https://github.com/welwang/format-converter-factory/releases/tag/v2.3.2",
   "source_archives_in_installer": false
 }

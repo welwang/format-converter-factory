@@ -36,6 +36,11 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# The same MuPDF DLL is auto-collected both at root and inside the package.
+# Python extension loading searches its package directory; retain that copy only.
+a.binaries = [b for b in a.binaries if b[0].replace('\\','/').lower() != 'mupdfcpp64.dll']
+# C headers / link libraries are development resources, unused at runtime.
+a.datas = [d for d in a.datas if '/mupdf-devel/' not in ('/'+d[0].replace('\\','/'))]
 pyz = PYZ(a.pure)
 
 exe = EXE(

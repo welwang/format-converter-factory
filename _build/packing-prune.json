@@ -1,0 +1,23 @@
+[
+  "tools/libreoffice/program/python-core-3.13.15",
+  "tools/libreoffice/program/python.exe",
+  "tools/libreoffice/program/python3.dll",
+  "tools/libreoffice/program/python313.dll",
+  "tools/libreoffice/program/pythonloader.py",
+  "tools/libreoffice/program/pythonloader.uno.ini",
+  "tools/libreoffice/program/pythonloaderlo.dll",
+  "tools/libreoffice/program/pythonscript.py",
+  "tools/libreoffice/program/pyuno.pyd",
+  "tools/libreoffice/program/Engine12.dll",
+  "tools/libreoffice/program/intl",
+  "tools/libreoffice/share/firebird",
+  "tools/libreoffice/share/Scripts/python",
+  "tools/calibre/app/resources/content-server",
+  "tools/calibre/app/resources/builtin_recipes.zip",
+  "tools/calibre/app/resources/builtin_recipes.xml",
+  "tools/calibre/app/resources/viewer.js",
+  "tools/calibre/app/resources/viewer.js.map",
+  "tools/calibre/app/resources/editor.js",
+  "tools/calibre/app/resources/editor-help",
+  "tools/calibre/app/resources/quick_start"
+]

@@ -1,5 +1,5 @@
 #define AppName "四維八德"
-#define AppVer "2.3.0"
+#define AppVer "2.3.1"
 #ifndef ReleaseRoot
 #define ReleaseRoot AddBackslash(SourcePath) + ".."
 #endif
@@ -23,7 +23,7 @@ LZMADictionarySize=65536
 LZMANumFastBytes=273
 LZMAUseSeparateProcess=yes
 SetupIconFile={#AddBackslash(SourcePath)}logo.ico
-LZMANumBlockThreads=2
+LZMANumBlockThreads=1
 WizardStyle=modern
 MinVersion=10.0
 ArchitecturesAllowed=x64compatible
@@ -63,7 +63,7 @@ Source: "{#ReleaseRoot}\PDF功能清單.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\TEST_RESULTS.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\測試報告.html"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#ReleaseRoot}\source\*"; DestDir: "{app}\source"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ReleaseRoot}\source\*"; DestDir: "{app}\source"; Excludes: "upstream\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\四維八德.exe"
 Name: "{group}\解除安裝 {#AppName}"; Filename: "{uninstallexe}"

@@ -50,3 +50,6 @@ autosync/state/
 !/source/來源清單.json
 
 !/PACKAGE_VALIDATION.md
+
+!/_build/prune_payload.py
+!/_build/packing-prune.json

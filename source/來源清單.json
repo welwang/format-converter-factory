@@ -1,5 +1,5 @@
 {
-  "version": "2.3.0",
+  "version": "2.3.1",
   "application_source": "application/",
   "application_licenses": [
     "GPL-3.0",
@@ -38,11 +38,13 @@
     "qpdf、LibRaw、Python 擴充模組及供應鏈元件需確認隨附來源封裝是否涵蓋二進位中的所有修訂。",
     "Microsoft 元件依其再散布條件提供，不能以 GPL／AGPL 重新授權。"
   ],
-  "notice": "應用程式来源與文件公開；完整安裝包依使用者明確要求公開發布。完整對應來源散布審核尚未完成，不宣稱已排除所有法律風險。",
+  "notice": "本版應用程式來源與已取得的上游來源在同一發布頁的來源 ZIP 提供。安裝包保留授權與來源記錄，完整第三方對應來源核實仍有待完成項目。",
   "webview2_sdk": {
     "version": "1.0.4258.31",
     "url": "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31",
     "license": "tools/WebView2-SDK-LICENSE.txt",
     "notice": "tools/WebView2-SDK-NOTICE.txt"
-  }
+  },
+  "source_download": "https://github.com/welwang/format-converter-factory/releases/tag/v2.3.1",
+  "source_archives_in_installer": false
 }

@@ -37,6 +37,8 @@ try {
     if (-not $windowTest.WaitForExit(60000)) { throw 'C 視窗診斷逾時。' }
     $smokeResult = Get-Content -LiteralPath $smokeReport -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($windowTest.ExitCode -ne 0 -or -not $smokeResult.ok) { throw 'C 視窗／混合工作診斷失敗。' }
+    & $python (Join-Path $buildRoot 'prune_payload.py') $candidate
+    if ($LASTEXITCODE -ne 0) { throw '安裝資料精簡失敗。' }
     # Run the actual frozen core; do not record the user's desktop or change disks.
     $test = Join-Path $stage 'selftest'
     & (Join-Path $candidate 'swbd-core.exe') --selftest $test --ai --no-open

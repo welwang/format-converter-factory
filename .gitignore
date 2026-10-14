@@ -5,8 +5,6 @@
 !/LICENSE
 !/使用說明.md
 !/授權說明.md
-!/暫停自動同步.cmd
-!/恢復自動同步.cmd
 !/autosync/
 !/_build/
 /_build/*
@@ -23,3 +21,5 @@ __pycache__/
 settings.json
 *.log
 autosync/state/
+暫停自動同步.cmd
+恢復自動同步.cmd

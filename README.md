@@ -114,8 +114,7 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 ├─ 使用說明.md               使用者說明
 ├─ 授權說明.md               第三方元件授權
 ├─ README.md / LICENSE
-├─ 暫停自動同步.cmd / 恢復自動同步.cmd
-├─ autosync\                 自動同步到 GitHub 的腳本
+├─ autosync\                 自動同步到 GitHub 的腳本（install.ps1 安裝排程工作）
 └─ _build\
    ├─ src\                   原始碼（app.py engine.py tools.py capture.py zhconv.py ui\ zhdict\）
    ├─ build.ps1              PyInstaller 建置並放到根目錄
@@ -221,4 +220,4 @@ AI 字幕第一次使用時會從 Hugging Face 下載 whisper.cpp 模型；簡�
 
 安裝程式與免安裝版請到 [Releases](../../releases) 下載。
 
-> 本專案已設定自動同步：在 welsPC 修改原始碼後約 2～3 分鐘內會自動上傳到 GitHub（暫停／恢復請執行根目錄的 暫停自動同步.cmd／恢復自動同步.cmd）。
+> 本專案已設定自動同步：在 welsPC 修改原始碼後約 2～3 分鐘內會自動上傳到 GitHub（要暫停或恢復，請在「工作排程器」停用／啟用 ZDGC-AutoSync，或使用本機自備的暫停／恢復腳本）。

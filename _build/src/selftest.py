@@ -11,7 +11,7 @@ import engine as E
 
 def main(arg=None):
     flags = set(a for a in sys.argv[2:] if a.startswith('--'))
-    root = arg if arg and not arg.startswith('--') else os.path.join(E.base_dir(), 'selftest')
+    root = os.path.abspath(arg if arg and not arg.startswith('--') else os.path.join(E.base_dir(), 'selftest'))
     smp = os.path.join(root, 'samples'); out = E.unique_path(os.path.join(root, 'out'))
     os.makedirs(smp, exist_ok=True); os.makedirs(out, exist_ok=True)
     logf = open(os.path.join(root, 'selftest.log'), 'w', encoding='utf-8')
@@ -31,6 +31,8 @@ def main(arg=None):
     yv = E.run([C.ytdlp(), '--version']).stdout.strip() if C.ytdlp() else '（沒有）'
     log(f'yt-dlp   {yv}   deno {C.deno() or "（尚未下載）"}')
     log(f'音訊裝置 {C.audio_devices()}   螢幕 {C.monitors()}')
+    miss = E.missing_components()
+    log('內建元件 ' + ('全部齊全' if not miss else '缺少：' + '；'.join(f"{m['name']}（{', '.join(m['files'])}）" for m in miss)))
     log('')
 
     S = lambda f: os.path.join(smp, f)
@@ -86,7 +88,7 @@ def main(arg=None):
             (['i.heic'], 'jpg', {}), (['alpha.png'], 'jpg', {}), (['alpha.png'], 'webp', {}), (['alpha.png'], 'avif', {}), (['alpha.png'], 'ico', {}), (['img0.jpg'], 'jpg', dict(target_mb=0.05)),
             (['img0.jpg', 'img1.jpg'], 'pdf', {}), (['multi.pdf'], 'png', {}), (['multi.pdf'], 'pdf', dict(preset='small')), (['multi.pdf'], 'txt', {}),
             (['d.md'], 'docx', {}), (['d.md'], 'html', {}), (['d.md'], 'pdf', {}), (['t.txt'], 'pdf', {}), (['d.docx'], 'pdf', {}), (['s.csv'], 'xlsx', {}),
-            (['b.epub'], 'mobi', {}), (['b.epub'], 'docx', {}), (['x.zip'], 'extract', {}), (['x.zip'], '7z', {}), (['sub.srt'], 'vtt', {}), (['m.stl'], 'glb', {})]
+            (['b.epub'], 'azw3', {}), (['b.epub'], 'docx', {}), (['x.zip'], 'extract', {}), (['x.zip'], '7z', {}), (['sub.srt'], 'vtt', {}), (['m.stl'], 'obj', {})]
     for fs, t, o in conv:
         fs = [S(f) for f in fs]
         if not all(os.path.exists(f) for f in fs): log(f'SKIP {os.path.basename(fs[0])}->{t}（缺少範例檔）'); continue
@@ -123,6 +125,10 @@ def main(arg=None):
             ids = eng.submit_tool('v_autosub', [wav], dict(lang='zh', model='base', trad=True, out='srt', out_dir=out), 'AI 自動字幕'); wait(ids, 1800); report('AI 自動字幕（base 模型）', ids)
             j = eng.jobs[ids[0]]
             if j.state == 'done': log('辨識結果：\n' + open(j.output, encoding='utf-8-sig').read())
+            ids = eng.submit_tool('a_transcribe', [wav], dict(lang='zh', model='base', trad=True, fmt='docx', out_dir=out), '音檔轉文字'); wait(ids, 1800); report('音檔轉文字（Word）', ids)
+            ids = eng.submit_tool('a_meeting', [wav], dict(lang='zh', model='base', mode='extract', points=5, out_dir=out), '會議總結'); wait(ids, 1800); report('會議總結（快速摘錄）', ids)
+            if T.ai_ok():
+                ids = eng.submit_tool('a_meeting', [wav], dict(lang='zh', model='base', mode='ai', points=5, out_dir=out), '會議總結'); wait(ids, 1800); report('會議總結（離線 AI）', ids)
         else: log('SKIP 無法用 Windows 語音產生測試音檔')
 
     if '--rec' in flags:
@@ -145,8 +151,9 @@ def main(arg=None):
     n = len(results); bad = n - sum(results)
     log(f'\n結果：{n - bad} / {n} 通過' + ('' if not bad else f'，{bad} 項失敗（詳細原因見上方 FAIL 與 logs\\zdgc.log）'))
     logf.close()
-    try: os.startfile(root)
-    except Exception: pass
+    if '--no-open' not in flags:
+        try: os.startfile(root)
+        except Exception: pass
     eng.pool.shutdown(wait=True); eng.light.shutdown(wait=True)
     return 1 if bad else 0
 

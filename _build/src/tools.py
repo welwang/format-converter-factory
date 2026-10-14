@@ -6,6 +6,7 @@ so progress, cancel and the queue work exactly like normal conversions.
 """
 import os, re, io, json, math, time, shutil, subprocess, tempfile, threading
 import engine as E
+import pdf_schema as PDF_SCHEMA
 
 POS = [['br', '右下'], ['bl', '左下'], ['tr', '右上'], ['tl', '左上'], ['c', '正中央'], ['b', '下方置中'], ['t', '上方置中']]
 RATIO = [['9:16', '9:16 直式短影音'], ['1:1', '1:1 方形'], ['4:5', '4:5 IG 直式'], ['16:9', '16:9 橫式'], ['4:3', '4:3'], ['21:9', '21:9 電影寬螢幕']]
@@ -44,7 +45,7 @@ TOOLS = [
         F('sub', '字幕檔', 'file', '', filter='字幕 (*.srt;*.ass;*.ssa;*.vtt)'), F('mode', '方式', 'select', 'burn', options=[['burn', '燒進畫面（任何播放器都看得到）'], ['soft', '內嵌字幕軌（可開關、不重新編碼）']]),
         F('size', '字級', 'number', 22, min=8, max=80, show={'mode': 'burn'}), F('outline', '黑色外框', 'check', True, show={'mode': 'burn'})]),
     dict(id='v_autosub', group='video', icon='sparkles', name='AI 自動字幕', desc='離線語音辨識產生字幕，可轉繁體、可直接燒進影片', accept=['video', 'audio'], fields=[
-        F('lang', '語言', 'select', 'zh', options=LANGS), F('model', '辨識模型', 'select', 'base', options=[['base', '快速（已內建，免下載）'], ['small', '準確（第一次使用下載約 490 MB）'], ['medium', '最準（第一次使用下載約 1.5 GB）']]),
+        F('lang', '語言', 'select', 'zh', options=LANGS), F('model', '辨識模型', 'select', 'base', options=[['base', '離線快速（模型已內建）']]),
         F('trad', '轉成繁體中文', 'check', True), F('out', '輸出', 'select', 'srt', options=[['srt', '只要 SRT 字幕檔'], ['burn', '字幕檔＋燒進影片'], ['soft', '字幕檔＋內嵌字幕軌']])]),
     dict(id='v_audio', group='video', icon='music', name='配樂／換音軌', desc='加背景音樂、與原聲混合，或整個換掉', accept=['video'], fields=[
         F('music', '音樂檔', 'file', '', filter='音訊 (*.mp3;*.m4a;*.wav;*.flac;*.ogg;*.aac)'), F('mode', '方式', 'select', 'mix', options=[['mix', '與原聲混合'], ['replace', '取代原聲']]),
@@ -86,6 +87,13 @@ TOOLS = [
         F('start', '從第幾秒開始', 'number', 0, min=0), F('len', '長度（秒）', 'number', 30, min=3, max=40), F('fmt', '格式', 'select', 'm4r', options=[['m4r', 'iPhone（M4R）'], ['mp3', 'Android（MP3）']])]),
     dict(id='a_tags', group='audio', icon='tag', name='歌曲資訊／封面', desc='修改歌名、歌手、專輯，加上封面圖（不重新編碼）', accept=['audio'], fields=[
         F('title', '歌名', 'text', ''), F('artist', '歌手', 'text', ''), F('album', '專輯', 'text', ''), F('year', '年份', 'text', ''), F('cover', '封面圖片', 'file', '', filter='圖片 (*.jpg;*.png)')]),
+    dict(id='a_transcribe', group='audio', icon='captions', name='音檔轉文字', desc='錄音、影片離線轉成逐字稿（TXT／Word／SRT），可轉繁體', accept=['audio', 'video'], fields=[
+        F('lang', '語言', 'select', 'zh', options=LANGS), F('model', '辨識模型', 'select', 'base', options=[['base', '離線快速（已內建）']]),
+        F('trad', '轉成繁體中文', 'check', True), F('fmt', '輸出', 'select', 'docx', options=[['docx', 'Word 逐字稿（含時間）'], ['txt', '純文字'], ['txt_ts', '純文字（每段附時間）'], ['srt', 'SRT 字幕']])]),
+    dict(id='a_meeting', group='audio', icon='list', name='會議總結', desc='會議錄音離線轉逐字稿，整理出摘要、重點、決議與待辦事項', accept=['audio', 'video'], fields=[
+        F('title', '會議名稱（選填）', 'text', ''), F('lang', '語言', 'select', 'zh', options=LANGS), F('model', '辨識模型', 'select', 'base', options=[['base', '離線快速（已內建）']]),
+        F('mode', '整理方式', 'select', 'ai', options=[['ai', '離線 AI 整理（較慢、較完整）'], ['extract', '快速摘錄（不使用 AI 模型）']]),
+        F('points', '重點數量', 'number', 8, min=3, max=20)]),
     # ---------------- image
     dict(id='i_resize', group='image', icon='resize', name='批次縮放', desc='依最長邊、寬、高或百分比縮放，不會放大', accept=['image'], fields=[
         F('mode', '依據', 'select', 'long', options=[['long', '最長邊（像素）'], ['w', '寬度（像素）'], ['h', '高度（像素）'], ['pct', '百分比']]), F('val', '數值', 'number', 1920, min=1),
@@ -131,11 +139,29 @@ TOOLS = [
         F('fmt', '格式', 'select', 'flac', options=[['flac', 'FLAC（無損）'], ['mp3', 'MP3'], ['m4a', 'M4A'], ['wav', 'WAV']])]),
     dict(id='d_iso', group='disc', icon='archive', name='光碟轉 ISO', desc='資料光碟、DVD 備份成 ISO 映像檔', accept=['disc'], fields=[]),
 ]
+TOOLS += PDF_SCHEMA.TOOLS
 TOOL = {t['id']: t for t in TOOLS}
 GROUPS = [['video', '影片工具'], ['audio', '音訊工具'], ['image', '圖片工具'], ['pdf', 'PDF 工具'], ['other', '隱私工具'], ['disc', '光碟']]
 
+MODEL_LABEL = {'base': '離線快速（base）', 'small': '離線準確（small）', 'medium': '離線高準確（medium，需 8 GB 以上）', 'turbo': '離線最準確（large-v3-turbo）'}
+
+def installed_models():
+    return [k for k in MODELS if find_model(MODELS[k][0], MODELS[k][1] * 0.98)]
+
 def schema():
-    return dict(groups=GROUPS, tools=TOOLS, font=bool(find_font()), whisper=whisper_ok())
+    import pdf_tools
+    models = installed_models()
+    opts = [[k, MODEL_LABEL[k]] for k in models] or [['base', '缺少離線辨識模型']]
+    tools = []
+    for t in TOOLS:
+        if t['id'] in ('v_autosub', 'a_transcribe', 'a_meeting'):
+            t = dict(t, fields=[dict(f, options=opts, default=opts[0][0]) if f['k'] == 'model' else f for f in t['fields']])
+        tools.append(t)
+    return dict(groups=GROUPS, tools=tools, font=bool(find_font()), whisper=whisper_ok() and bool(models), whisper_ffmpeg=whisper_ok(),
+                speech_models=models, ai=ai_ok(), pdf=pdf_tools.capabilities())
+
+def ai_ok():
+    return os.path.isfile(E.bundled('pdf-ai', 'llama-completion.exe')) and os.path.isfile(E.bundled('pdf-ai', 'model.gguf'))
 
 def run(eng, j):
     fn = RUN.get(j.tool)
@@ -614,7 +640,8 @@ def t_grid(eng, j, o):
     video_tool(eng, j, fs[0], '_並排', fc=fc, maps=maps, extra_in=[['-i', f] for f in fs[1:]], dur=d, ext='mp4')
 
 # ---------------------------------------------------------------- AI subtitles (whisper.cpp inside ffmpeg)
-MODELS = {'base': ('ggml-base.bin', 147951465), 'small': ('ggml-small.bin', 487601967), 'medium': ('ggml-medium.bin', 1533763059)}
+MODELS = {'base': ('ggml-base.bin', 147951465), 'small': ('ggml-small.bin', 487601967), 'medium': ('ggml-medium.bin', 1533763059),
+          'turbo': ('ggml-large-v3-turbo-q5_0.bin', 574041195)}
 MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
 
 def model_dir():
@@ -630,10 +657,23 @@ def find_model(name, min_size=0):
 
 _WHISPER = None
 def whisper_ok():
+    """Does the bundled ffmpeg have the whisper filter?  Asked while the window opens, so the answer is kept
+    on disk per ffmpeg build: starting the 220 MB ffmpeg.exe just to list filters cost up to a second per launch."""
     global _WHISPER
     if _WHISPER is None:
-        try: _WHISPER = bool(E.FFMPEG) and ' whisper ' in E.run([E.FFMPEG, '-hide_banner', '-filters']).stdout
-        except Exception: _WHISPER = False
+        if not E.FFMPEG: _WHISPER = False; return _WHISPER
+        cache = os.path.join(E.data_dir(), 'ffmpeg_caps.json')
+        try: sig = [os.path.getmtime(E.FFMPEG), os.path.getsize(E.FFMPEG)]
+        except OSError: sig = None
+        try:
+            with open(cache, encoding='utf-8') as fh: c = json.load(fh)
+            if sig and c.get('ffmpeg') == sig and isinstance(c.get('whisper'), bool): _WHISPER = c['whisper']; return _WHISPER
+        except Exception: pass
+        try: _WHISPER = ' whisper ' in E.run([E.FFMPEG, '-hide_banner', '-filters']).stdout
+        except Exception: _WHISPER = False; return _WHISPER
+        try:
+            with open(cache, 'w', encoding='utf-8') as fh: json.dump(dict(ffmpeg=sig, whisper=_WHISPER), fh)
+        except Exception: pass
     return _WHISPER
 
 _MODEL_LOCK = threading.Lock()
@@ -643,27 +683,12 @@ def ensure_model(j, key):
         return _ensure_model(j, key)
 
 def _ensure_model(j, key):
-    name, size = MODELS[key]
+    name, size = MODELS.get(key) or MODELS['base']
     have = find_model(name, size * 0.98)
     if have: return have
-    p = os.path.join(model_dir(), name)
-    import urllib.request
-    j.encoder = f'第一次使用，下載辨識模型（{size // 1048576} MB）…'
-    tmp = p + '.part'
-    req = urllib.request.Request(MODEL_URL + name, headers={'User-Agent': 'ZDGC'})
-    with urllib.request.urlopen(req, timeout=30) as r, open(tmp, 'wb') as fh:
-        total = int(r.headers.get('Content-Length') or size); got = 0; t0 = time.time()
-        while True:
-            if j.cancelled: fh.close(); os.remove(tmp); raise InterruptedError
-            b = r.read(1 << 20)
-            if not b: break
-            fh.write(b); got += len(b)
-            j.progress = 0.3 * got / total; el = time.time() - t0
-            j.speed = f'{got / 1048576 / max(el, 0.1):.1f} MB/s'
-            j.eta = round(el / max(got / total, 1e-3) - el)
-    if os.path.getsize(tmp) < size * 0.98: os.remove(tmp); raise RuntimeError('模型下載不完整，請再試一次')
-    os.replace(tmp, p); j.speed = ''
-    return p
+    for k in installed_models():                     # the chosen model is gone: use any bundled one
+        return find_model(MODELS[k][0], MODELS[k][1] * 0.98)
+    raise RuntimeError('缺少離線語音辨識模型（tools\\models\\ggml-base.bin），請重新安裝完整版本')
 
 VAD_URL = 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin'
 def ensure_vad():
@@ -672,14 +697,6 @@ def ensure_vad():
 def _ensure_vad():
     have = find_model('ggml-silero-v5.1.2.bin', 100000)
     if have: return have
-    p = os.path.join(model_dir(), 'ggml-silero-v5.1.2.bin')
-    try:
-        import urllib.request
-        with urllib.request.urlopen(urllib.request.Request(VAD_URL, headers={'User-Agent': 'ZDGC'}), timeout=20) as r: data = r.read()
-        if len(data) > 100000:
-            with open(p, 'wb') as fh: fh.write(data)
-            return p
-    except Exception: pass
     return None
 
 def to_trad(text):
@@ -688,20 +705,18 @@ def to_trad(text):
     except Exception:
         return text
 
-def t_autosub(eng, j, o):
+def whisper_srt(eng, j, src, o, base=0.0, span=1.0):
+    """Offline speech recognition (whisper.cpp inside ffmpeg) -> cleaned SRT text (Traditional Chinese if asked)."""
     need_ff()
     if not whisper_ok(): raise RuntimeError('這個 FFmpeg 版本沒有內建語音辨識（需要 FFmpeg 8 以上的 full 版）')
-    src = j.files[0]; d = info(src)['dur']
     if not has_audio(src): raise RuntimeError('檔案裡沒有聲音')
     if o.get('model') == 'medium' and E.mem_gb() < 6: raise RuntimeError('記憶體較少，請使用「快速」或「準確」模型，避免系統過度使用分頁檔')
-    model = ensure_model(j, o.get('model', 'small'))
+    model = ensure_model(j, o.get('model', 'base'))
     lang = o.get('lang', 'zh'); lang = 'zh' if lang == 'yue' else lang   # whisper.cpp has no separate Cantonese in older models
+    d = info(src)['dur']
     tmp = tmpdir()
     try:
         vad = ensure_vad()
-        base = 0.3 if j.progress >= 0.29 else 0.0
-        burn = o.get('out', 'srt') == 'burn'
-        span = (0.5 if burn else 1.0) * (1 - base)
         maxlen = 22 if lang in ('zh', 'ja', 'ko', 'yue') else 42
         # VAD cuts the audio at real pauses -> better sentence boundaries and no "hallucinated" text in silence
         variants = []
@@ -715,22 +730,182 @@ def t_autosub(eng, j, o):
             if j._rc == 0 or j.cancelled: break
             if k == len(variants) - 1 or not re.search(r'Option .* not found|vad|Error applying option', j._err, re.I):
                 raise RuntimeError('語音辨識失敗：' + ff_error(j._err))
+        if j.cancelled: raise InterruptedError
         sp = os.path.join(tmp, 'out.srt')
         if not os.path.isfile(sp) or os.path.getsize(sp) < 5: raise RuntimeError('沒有辨識到任何語音')
-        text = open(sp, encoding='utf-8', errors='replace').read()
-        text = fix_srt(text)
+        with open(sp, encoding='utf-8', errors='replace') as fh: text = fix_srt(fh.read())
         if o.get('trad', True) and lang in ('zh', 'auto'): text = to_trad(text)
-        srt = out_for(j, src, 'srt', '')
-        with open(srt, 'w', encoding='utf-8-sig') as fh: fh.write(text)
-        j.output = srt; j.keep_output = True
-        if o.get('out') == 'burn' and has_video(src):
-            burn_subs(eng, j, src, srt, 22, True, '_AI字幕', base=base + span, span=1 - base - span)
-        elif o.get('out') == 'soft' and has_video(src):
-            soft_subs(eng, j, src, srt, '_AI字幕')
-        if o.get('out') != 'srt': j.encoder = 'AI 字幕（另存 SRT：' + os.path.basename(srt) + '）'
-        else: j.encoder = 'AI 語音辨識（whisper）'
+        return text
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+def t_autosub(eng, j, o):
+    src = j.files[0]
+    base = 0.3 if j.progress >= 0.29 else 0.0
+    burn = o.get('out', 'srt') == 'burn'
+    span = (0.5 if burn else 1.0) * (1 - base)
+    text = whisper_srt(eng, j, src, o, base, span)
+    srt = out_for(j, src, 'srt', '')
+    with open(srt, 'w', encoding='utf-8-sig') as fh: fh.write(text)
+    j.output = srt; j.keep_output = True
+    if o.get('out') == 'burn' and has_video(src):
+        burn_subs(eng, j, src, srt, 22, True, '_AI字幕', base=base + span, span=1 - base - span)
+    elif o.get('out') == 'soft' and has_video(src):
+        soft_subs(eng, j, src, srt, '_AI字幕')
+    if o.get('out') != 'srt': j.encoder = 'AI 字幕（另存 SRT：' + os.path.basename(srt) + '）'
+    else: j.encoder = 'AI 語音辨識（whisper）'
+
+# ---------------------------------------------------------------- transcripts & meeting notes
+def srt_cues(text):
+    """SRT text -> [(start_seconds, end_seconds, text)]"""
+    def sec(t):
+        h, m, rest = t.strip().replace('.', ',').split(':'); s, _, ms = rest.partition(',')
+        return int(h) * 3600 + int(m) * 60 + int(s) + int((ms or '0')[:3].ljust(3, '0')) / 1000
+    cues = []
+    for b in re.split(r'\n\s*\n', text.replace('\r', '').strip()):
+        lines = b.strip().split('\n')
+        k = next((i for i, l in enumerate(lines) if '-->' in l), None)
+        if k is None: continue
+        a, _, z = lines[k].partition('-->')
+        try: st, en = sec(a), sec(z.split()[0])
+        except (ValueError, IndexError): continue
+        body = ' '.join(l.strip() for l in lines[k + 1:] if l.strip())
+        if body: cues.append((st, en, body))
+    return cues
+
+def hms(t):
+    t = int(t); return f'{t // 3600:02d}:{t % 3600 // 60:02d}:{t % 60:02d}'
+
+def paragraphs(cues, cjk=True, gap=2.0, limit=260):
+    """Join recognised lines into readable paragraphs: a new paragraph after a pause or when one gets long."""
+    out = []; cur = []; start = None; last = None
+    joiner = '' if cjk else ' '
+    for st, en, tx in cues:
+        if cur and (st - last > gap or len(joiner.join(cur)) > limit):
+            out.append((start, joiner.join(cur))); cur = []
+        if not cur: start = st
+        if cjk and cur and not re.search(r'[，。！？、,.!?；;：:]$', cur[-1]): cur[-1] += '，'
+        cur.append(tx); last = en
+    if cur: out.append((start, joiner.join(cur)))
+    return [(s, re.sub(r'，$', '', p) + ('。' if cjk and not re.search(r'[。！？.!?]$', p) else '')) for s, p in out]
+
+def write_docx(path, title, blocks):
+    """blocks: [('h', text) | ('p', text) | ('b', text) bullet | ('t', (time, text)) timestamped paragraph]"""
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.oxml.ns import qn
+    doc = Document()
+    font = font_family() if find_font() else 'Microsoft JhengHei'
+    for name in ('Normal', 'Title', 'Heading 1', 'Heading 2', 'List Bullet'):
+        try:
+            st = doc.styles[name]; st.font.name = font
+            st.element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'), font)
+        except KeyError: pass
+    doc.styles['Normal'].font.size = Pt(11)
+    doc.add_heading(title, 0)
+    for kind, val in blocks:
+        if kind == 'h': doc.add_heading(val, 1)
+        elif kind == 'b': doc.add_paragraph(val, style='List Bullet')
+        elif kind == 't':
+            p = doc.add_paragraph(); r = p.add_run(f'[{hms(val[0])}] '); r.font.color.rgb = RGBColor(0x86, 0x86, 0x8B); p.add_run(val[1])
+        else: doc.add_paragraph(val)
+    doc.save(path)
+
+def t_transcribe(eng, j, o):
+    src = j.files[0]; fmt = o.get('fmt', 'docx')
+    text = whisper_srt(eng, j, src, o, 0.0, 0.95)
+    cjk = o.get('lang', 'zh') in ('zh', 'ja', 'ko', 'yue', 'auto')
+    paras = paragraphs(srt_cues(text), cjk)
+    if not paras: raise RuntimeError('沒有辨識到任何語音')
+    stem = os.path.splitext(os.path.basename(src))[0]
+    if fmt == 'srt':
+        out = out_for(j, src, 'srt', '_逐字稿')
+        with open(out, 'w', encoding='utf-8-sig') as fh: fh.write(text)
+    elif fmt == 'docx':
+        out = out_for(j, src, 'docx', '_逐字稿')
+        write_docx(out, stem + ' 逐字稿', [('p', f'來源：{os.path.basename(src)}　長度：{hms(info(src)["dur"])}　（離線語音辨識，請核對專有名詞）')] + [('t', p) for p in paras])
+    else:
+        out = out_for(j, src, 'txt', '_逐字稿')
+        with open(out, 'w', encoding='utf-8-sig') as fh:
+            fh.write('\n\n'.join((f'[{hms(s)}] ' if fmt == 'txt_ts' else '') + p for s, p in paras) + '\n')
+    j.output = out; j.encoder = f'AI 語音辨識（whisper，{len(paras)} 段）'
+
+SUMMARY_SECTIONS = ('摘要', '重點', '決議', '待辦事項')
+
+def _sections(text):
+    """'【摘要】…【重點】…' or '摘要：' / '## 重點' headings -> {section: [lines]}"""
+    out = {k: [] for k in SUMMARY_SECTIONS}; cur = '重點'
+    for line in text.splitlines():
+        l = line.strip().strip('*').strip()
+        if not l: continue
+        hit = next((k for k in SUMMARY_SECTIONS if re.fullmatch(rf'[#\s【\[]*{k}[】\]：:\s]*', l) or re.match(rf'^[#\s]*[【\[]{k}[】\]]', l)), None)
+        if hit:
+            cur = hit; rest = re.sub(rf'^[#\s]*[【\[]?{hit}[】\]]?[：:]?\s*', '', l)
+            if rest: out[cur].append(rest)
+            continue
+        l = re.sub(r'^([-•・*]|\d+[.、)])\s*', '', l)
+        if l and not re.fullmatch(r'(無|沒有|N/?A|none)[。.]?', l, re.I): out[cur].append(l)
+    return out
+
+def t_meeting(eng, j, o):
+    src = j.files[0]; mode = o.get('mode', 'ai'); n = max(3, min(20, int(num(o, 'points', 8))))
+    if mode == 'ai' and not ai_ok(): raise RuntimeError('缺少離線文字模型（tools\\pdf-ai），請改用「快速摘錄」或重新安裝完整版本')
+    text = whisper_srt(eng, j, src, o, 0.0, 0.55 if mode == 'ai' else 0.9)
+    cjk = o.get('lang', 'zh') in ('zh', 'ja', 'ko', 'yue', 'auto')
+    paras = paragraphs(srt_cues(text), cjk)
+    if not paras: raise RuntimeError('沒有辨識到任何語音')
+    transcript = '\n'.join(p for _, p in paras)
+    import pdf_local_engines as L
+    if mode == 'ai':
+        lang_name = '繁體中文' if cjk else '與原文相同的語言'
+        pieces = L.chunks(transcript, 1000); notes = []
+        for i, part in enumerate(pieces):
+            if j.cancelled: raise InterruptedError
+            j.encoder = f'AI 整理會議內容 {i + 1}/{len(pieces)}'
+            notes.append(L.generate(j, f'以下是會議逐字稿片段（語音辨識，可能有錯字）。請用{lang_name}條列這段的重點，最多 5 點；'
+                                       '有做出決定的，用「決議：」開頭；有人要負責的事，用「待辦：」開頭並寫出負責人與期限（逐字稿有提到才寫）。只輸出條列，不要編造。', part, 320))
+            j.progress = 0.55 + 0.3 * (i + 1) / len(pieces)
+        merged = '\n'.join(notes)
+        while len(merged) > 1400:                        # several hours of meeting: condense the notes first
+            parts = L.chunks(merged, 1300)
+            merged = '\n'.join(L.generate(j, f'把以下會議筆記濃縮成最多 6 點{lang_name}條列，保留「決議：」和「待辦：」項目。', p, 320) for p in parts)
+        j.encoder = 'AI 產生會議總結'
+        final = L.generate(j, f'根據以下會議筆記，用{lang_name}寫出會議總結，嚴格使用這四個標題：\n【摘要】2～3 句話說明會議主題與結論\n【重點】最多 {n} 點條列\n'
+                              '【決議】條列，沒有就寫「無」\n【待辦事項】條列「負責人：事項（期限）」，沒有就寫「無」\n只根據筆記內容，不要編造。', merged, 700)
+        sec = _sections(final)
+        for line in merged.splitlines():                 # decisions / to-dos the final pass dropped
+            l = re.sub(r'^([-•・*]|\d+[.、)])\s*', '', line.strip())
+            for key, tag in (('決議', '決議：'), ('待辦事項', '待辦：')):
+                if l.startswith(tag) and not any(l[len(tag):].strip()[:8] in x for x in sec[key]): sec[key].append(l[len(tag):].strip())
+        if not sec['摘要'] and sec['重點']: sec['摘要'] = [sec['重點'][0]]
+        engine = 'whisper + llama.cpp（離線）'
+    else:
+        sec = {k: [] for k in SUMMARY_SECTIONS}
+        sec['重點'] = [l.lstrip('• ') for l in L.extractive(transcript, n).splitlines() if l.strip()]
+        sec['摘要'] = sec['重點'][:1]
+        for s, p in paras:
+            for sentence in re.split(r'(?<=[。！？.!?])', p):
+                if re.search(r'決定|決議|確定|通過|同意|定案', sentence): sec['決議'].append(sentence.strip())
+                elif re.search(r'負責|處理|完成|跟進|追蹤|下週|下次|之前|截止|due|deadline|follow', sentence, re.I): sec['待辦事項'].append(sentence.strip())
+        sec['決議'] = list(dict.fromkeys(x for x in sec['決議'] if x))[:10]; sec['待辦事項'] = list(dict.fromkeys(x for x in sec['待辦事項'] if x))[:10]
+        engine = 'whisper + 快速摘錄（離線）'
+    j.progress = 0.9
+    title = (o.get('title') or '').strip() or os.path.splitext(os.path.basename(src))[0]
+    folder = out_dir_for(j, src, '_會議總結'); j.output = folder
+    meta = f'來源：{os.path.basename(src)}　長度：{hms(info(src)["dur"])}　產生方式：{engine}'
+    blocks = [('p', meta)]
+    for k in SUMMARY_SECTIONS:
+        blocks.append(('h', k))
+        items = sec[k] or ['無']
+        blocks += [('p' if k == '摘要' else 'b', x) for x in items]
+    blocks += [('h', '逐字稿')] + [('t', p) for p in paras]
+    write_docx(os.path.join(folder, title + '_會議總結.docx'), title + ' 會議總結', blocks)
+    with open(os.path.join(folder, title + '_會議總結.md'), 'w', encoding='utf-8') as fh:
+        fh.write(f'# {title} 會議總結\n\n{meta}\n\n' + '\n\n'.join(f'## {k}\n\n' + '\n'.join(('' if k == '摘要' else '- ') + x for x in (sec[k] or ['無'])) for k in SUMMARY_SECTIONS)
+                 + '\n\n## 逐字稿\n\n' + '\n\n'.join(f'[{hms(s)}] {p}' for s, p in paras) + '\n')
+    with open(os.path.join(folder, '逐字稿.srt'), 'w', encoding='utf-8-sig') as fh: fh.write(text)
+    j.encoder = f'會議總結（{engine}）'
+    j.notes = ['語音辨識與 AI 整理可能有錯字或遺漏，重要決議與待辦請對照逐字稿確認。']
 
 def fix_srt(text):
     """Renumber cues and drop empty ones (whisper sometimes emits blanks)."""
@@ -827,9 +1002,9 @@ def t_tags(eng, j, o):
     eng._proc(j, c + [out], '寫入歌曲資訊'); j.encoder = '不重新編碼'
 
 # ---------------------------------------------------------------- image tools
-def open_img(path):
+def open_img(path, want=None):
     from PIL import ImageOps
-    return ImageOps.exif_transpose(E.Engine._open_img(None, path))
+    return ImageOps.exif_transpose(E.Engine._open_img(None, path, want))
 
 def img_ext(src, o):
     f = o.get('fmt') or 'same'
@@ -850,10 +1025,15 @@ def save_img(im, out, o, icc=None):
 
 def t_resize(eng, j, o):
     from PIL import Image
-    src = j.files[0]; im = open_img(src); icc = im.info.get('icc_profile')
-    m = o.get('mode', 'long'); v = num(o, 'val', 1920); W, H = im.size
-    s = {'long': v / max(W, H), 'w': v / W, 'h': v / H, 'pct': v / 100}[m]
-    if s < 1: im = im.resize((max(1, round(W * s)), max(1, round(H * s))), Image.LANCZOS)
+    src = j.files[0]; m = o.get('mode', 'long'); v = num(o, 'val', 1920)
+    factor = lambda W, H: {'long': v / max(W, H), 'w': v / W, 'h': v / H, 'pct': v / 100}[m]
+    W0 = H0 = None
+    def want(W, H):                                    # remember the true size: JPEG may be decoded pre-shrunk
+        nonlocal W0, H0; W0, H0 = W, H; return factor(W, H)
+    im = open_img(src, want); icc = im.info.get('icc_profile')
+    W, H = (W0, H0) if W0 else im.size
+    s = factor(W, H)
+    if s < 1: im = im.resize((max(1, round(W * s)), max(1, round(H * s))), Image.LANCZOS, reducing_gap=3.0)
     out = out_for(j, src, img_ext(src, o), '_縮放'); j.output = out
     save_img(im, out, o, icc); j.encoder = f'Pillow（{im.width}×{im.height}）'
 
@@ -925,20 +1105,20 @@ def t_collage(eng, j, o):
     ims = []
     for i, f in enumerate(fs):
         if j.cancelled: raise InterruptedError
-        ims.append(E.flatten(open_img(f), bg)); j.progress = 0.8 * (i + 1) / len(fs)
+        ims.append(E.flatten(open_img(f, lambda W, H: S / min(W, H) if lay == 'grid' else S / (W if lay == 'v' else H)), bg)); j.progress = 0.8 * (i + 1) / len(fs)
     if lay == 'v':
-        ims = [im.resize((S, max(1, round(im.height * S / im.width))), Image.LANCZOS) for im in ims]
+        ims = [im.resize((S, max(1, round(im.height * S / im.width))), Image.LANCZOS, reducing_gap=3.0) for im in ims]
         canvas = Image.new('RGB', (S, sum(im.height for im in ims) + gap * (len(ims) - 1)), bg); y = 0
         for im in ims: canvas.paste(im, (0, y)); y += im.height + gap
     elif lay == 'h':
-        ims = [im.resize((max(1, round(im.width * S / im.height)), S), Image.LANCZOS) for im in ims]
+        ims = [im.resize((max(1, round(im.width * S / im.height)), S), Image.LANCZOS, reducing_gap=3.0) for im in ims]
         canvas = Image.new('RGB', (sum(im.width for im in ims) + gap * (len(ims) - 1), S), bg); x = 0
         for im in ims: canvas.paste(im, (x, 0)); x += im.width + gap
     else:
         cols = int(num(o, 'cols', 3)); rows = math.ceil(len(ims) / cols); cell = (S - gap * (cols - 1)) // cols
         canvas = Image.new('RGB', (cols * cell + gap * (cols - 1), rows * cell + gap * (rows - 1)), bg)
         for k, im in enumerate(ims):
-            im = crop_ratio(im, 1.0).resize((cell, cell), Image.LANCZOS)
+            im = crop_ratio(im, 1.0).resize((cell, cell), Image.LANCZOS, reducing_gap=3.0)
             canvas.paste(im, ((k % cols) * (cell + gap), (k // cols) * (cell + gap)))
     if max(canvas.size) > 65000: raise RuntimeError('拼出來的圖太大（超過 65000 像素），請減少張數或寬度')
     ext = o.get('fmt', 'jpg')
@@ -958,7 +1138,7 @@ def t_slideshow(eng, j, o):
         paths = []
         for i, f in enumerate(fs):
             if j.cancelled: raise InterruptedError
-            im = E.flatten(open_img(f), (0, 0, 0)); im.thumbnail((W * 2, H * 2), Image.LANCZOS)
+            im = E.flatten(open_img(f, lambda w, h: min(W * 2 / w, H * 2 / h)), (0, 0, 0)); im.thumbnail((W * 2, H * 2), Image.LANCZOS)
             p = os.path.join(tmp, f'{i:04d}.jpg'); im.save(p, quality=92); paths.append(p)
             j.progress = 0.1 * (i + 1) / len(fs)
         n = len(paths); total = n * D - (n - 1) * T
@@ -993,7 +1173,7 @@ def t_gif(eng, j, o):
     fs = j.files; w = int(num(o, 'w', 600)); frames = []
     for i, f in enumerate(fs):
         if j.cancelled: raise InterruptedError
-        im = E.flatten(open_img(f)); im = im.resize((w, max(1, round(im.height * w / im.width))), Image.LANCZOS)
+        im = E.flatten(open_img(f, lambda W, H: w / W)); im = im.resize((w, max(1, round(im.height * w / im.width))), Image.LANCZOS, reducing_gap=3.0)
         frames.append(im); j.progress = 0.7 * (i + 1) / len(fs)
     H = max(f.height for f in frames)
     frames = [f if f.height == H else (lambda c: (c.paste(f, (0, (H - f.height) // 2)), c)[1])(Image.new('RGB', (w, H), (255, 255, 255))) for f in frames]
@@ -1231,6 +1411,13 @@ def cd_toc(drive):
     import ctypes
     from ctypes import wintypes
     k = ctypes.windll.kernel32
+    if not isinstance(drive,str) or not re.fullmatch(r'[A-Za-z]:\\?',drive):raise RuntimeError('請選擇音樂光碟機')
+    if k.GetDriveTypeW(str(drive[0])+':\\') != 5:raise RuntimeError('請選擇音樂光碟機')
+    k.CreateFileW.argtypes=[ctypes.c_wchar_p,wintypes.DWORD,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD,wintypes.DWORD,wintypes.HANDLE]
+    k.CreateFileW.restype=wintypes.HANDLE
+    k.DeviceIoControl.argtypes=[wintypes.HANDLE,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD,ctypes.POINTER(wintypes.DWORD),ctypes.c_void_p]
+    k.DeviceIoControl.restype=wintypes.BOOL
+    k.CloseHandle.argtypes=[wintypes.HANDLE];k.CloseHandle.restype=wintypes.BOOL
     h = k.CreateFileW(f'\\\\.\\{drive[0]}:', 0x80000000, 3, None, 3, 0, None)
     if h in (-1, 0xFFFFFFFF, ctypes.c_void_p(-1).value): raise RuntimeError('無法開啟光碟機')
     buf = (ctypes.c_ubyte * 804)(); ret = wintypes.DWORD()
@@ -1255,7 +1442,7 @@ def t_cd(eng, j, o):
         if not audio: raise RuntimeError('這片光碟沒有音樂音軌')
         folder = j.opt.get('out_dir') or os.path.join(default_dir(j), '音樂CD_' + time.strftime('%Y%m%d_%H%M'))
         folder = E.unique_path(folder); os.makedirs(folder); j.output = folder
-        fmt = o.get('fmt', 'flac'); total = sum(b - a for _, a, b in audio); done = 0
+        fmt = o.get('fmt', 'flac'); total = sum(b - a for _, a, b in audio); done = 0;unreadable=0
         class RAW(ctypes.Structure): _fields_ = [('DiskOffset', ctypes.c_longlong), ('SectorCount', wintypes.ULONG), ('TrackMode', ctypes.c_int)]
         N = 20; buf = (ctypes.c_ubyte * (2352 * N))(); ret = wintypes.DWORD()
         for no, a, b in audio:
@@ -1269,19 +1456,24 @@ def t_cd(eng, j, o):
                     ok = False
                     for _ in range(3):
                         if k.DeviceIoControl(ctypes.c_void_p(h), 0x2403E, ctypes.byref(ri), ctypes.sizeof(ri), buf, 2352 * n, ctypes.byref(ret), None): ok = True; break
+                    if not ok:unreadable+=n
                     w.writeframes(bytes(buf[:ret.value]) if ok else b'\0' * (2352 * n))
                     lba += n; done += n; j.progress = 0.85 * done / total
             if fmt != 'wav':
                 outp = wav[:-3] + fmt
                 r = E.run([FF(), '-hide_banner', '-nostdin', '-y', '-v', 'error', '-i', wav] + E.audio_args(fmt, o) + ['-metadata', f'track={no}', outp])
                 if r.returncode == 0: os.remove(wav)
+                else:j.warnings.append(f'第 {no} 軌音訊轉換未完成，已保留 WAV 原始擷取檔')
+        if unreadable:j.warnings.append(f'{unreadable} 個光碟區塊無法讀取，已以靜音填補；請核對音軌')
         j.encoder = f'{len(audio)} 首音軌'
     finally:
         k.CloseHandle(ctypes.c_void_p(h))
 
 def t_iso(eng, j, o):
+    import ctypes
     src = j.files[0]
     if os.name != 'nt' or not re.fullmatch(r'[A-Za-z]:\\?', src): raise RuntimeError('請選擇光碟機')
+    if ctypes.windll.kernel32.GetDriveTypeW(str(src[0])+':\\') != 5:raise RuntimeError('請選擇光碟機')
     dev = f'\\\\.\\{src[0]}:'
     import ctypes
     free = ctypes.c_ulonglong(); total = ctypes.c_ulonglong()
@@ -1309,8 +1501,12 @@ RUN = dict(v_social=t_social, v_fill=t_fill, v_crop=t_crop, v_rotate=t_rotate, v
            a_volume=t_volume, a_pitch=t_pitch, a_vocal=t_vocal, a_denoise=t_denoise, a_silence=t_silence, a_mix=t_mix, a_ringtone=t_ringtone, a_tags=t_tags,
            i_resize=t_resize, i_rotate=t_irotate, i_watermark=t_iwm, i_collage=t_collage, i_slideshow=t_slideshow, i_gif=t_gif,
            p_split=t_psplit, p_pages=t_ppages, p_rotate=t_protate, p_encrypt=t_pencrypt, p_decrypt=t_pdecrypt,
-           x_privacy=t_privacy, d_dvd=t_dvd, d_bluray=t_bluray, d_cd=t_cd, d_iso=t_iso)
+           x_privacy=t_privacy, d_dvd=t_dvd, d_bluray=t_bluray, d_cd=t_cd, d_iso=t_iso, a_transcribe=t_transcribe, a_meeting=t_meeting)
+def _offline_pdf(eng,j,o):
+    import pdf_tools
+    return pdf_tools.run(eng,j,o)
+RUN.update({t['id']:_offline_pdf for t in PDF_SCHEMA.TOOLS})
 assert set(RUN) == set(TOOL), set(TOOL) ^ set(RUN)
 
 # which tools mostly run ffmpeg (go to the small "heavy" pool)
-HEAVY = {t['id'] for t in TOOLS if t['group'] in ('video', 'disc')} | {'a_pitch'}
+HEAVY = {t['id'] for t in TOOLS if t['group'] in ('video', 'disc')} | {'a_pitch', 'a_transcribe', 'a_meeting'}

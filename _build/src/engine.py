@@ -1,5 +1,5 @@
 """四維八德 conversion engine (no UI)."""
-import os, sys, re, json, time, shutil, subprocess, threading, tempfile, uuid
+import os, sys, re, io, json, math, time, shutil, subprocess, threading, tempfile, uuid
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 
@@ -12,7 +12,7 @@ def pdfium_serial(fn):
     return guarded
 
 def public_options(opt):
-    return {k: ('[已隱藏]' if k.lower() in ('pw', 'password', 'token', 'cookie', 'cookies') else v)
+    return {k: ('[已隱藏]' if k.lower() in ('pw', 'password', 'pfx_pw', 'token', 'cookie', 'cookies', 'actions') else v)
             for k, v in opt.items() if not k.startswith('_')}
 
 def kill_process(proc):
@@ -54,29 +54,53 @@ def bundled(*parts):
     """Path inside the program's own tools folder (read-only resources shipped with the app)."""
     return os.path.join(base_dir(), 'tools', *parts)
 
+# Every engine is shipped in tools\ and only that copy is used: the program never depends on (or is
+# confused by) whatever version of FFmpeg / LibreOffice / Calibre / 7-Zip a PC happens to have installed.
 def find_tool(name):
     for p in (os.path.join(base_dir(), 'tools', name + '.exe'), os.path.join(base_dir(), 'tools', name)):
         if os.path.isfile(p):
             return p
-    return shutil.which(name)
+    return None
 
 FFMPEG = find_tool('ffmpeg'); FFPROBE = find_tool('ffprobe')
 
 def find_soffice():
-    for p in [os.path.join(base_dir(), 'tools', 'libreoffice', 'program', 'soffice.exe'),os.environ.get('ProgramFiles', r'C:\Program Files') + r'\LibreOffice\program\soffice.exe',
-              os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)') + r'\LibreOffice\program\soffice.exe']:
-        if os.path.isfile(p):
-            return p
-    return shutil.which('soffice')
+    p = os.path.join(base_dir(), 'tools', 'libreoffice', 'program', 'soffice.exe')
+    return p if os.path.isfile(p) else None
 
 SOFFICE = find_soffice()
-SEVENZIP = find_tool('7z') or (r'C:\Program Files\7-Zip\7z.exe' if os.path.isfile(r'C:\Program Files\7-Zip\7z.exe') else None)
+SEVENZIP = find_tool('7z')
 PANDOC = find_tool('pandoc')
 def _calibre():
-    for p in [os.path.join(base_dir(), 'tools', 'calibre', 'ebook-convert.exe'), r'C:\Program Files\Calibre2\ebook-convert.exe']:
-        if os.path.isfile(p): return p
-    return shutil.which('ebook-convert')
+    p = os.path.join(base_dir(), 'tools', 'calibre', 'ebook-convert.exe')
+    return p if os.path.isfile(p) else None
 CALIBRE = _calibre()
+
+VC_RUNTIME = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll')
+# (name shown to the user, files that must exist under tools\, what stops working without it)
+COMPONENTS = [
+    ('FFmpeg', ['ffmpeg.exe'], '影音、字幕、語音辨識'),
+    ('7-Zip', ['7z.exe', '7z.dll'], '壓縮檔'),
+    ('Pandoc', ['pandoc.exe'], '文件格式轉換'),
+    ('LibreOffice', ['libreoffice/program/soffice.exe'] + ['libreoffice/program/' + d for d in VC_RUNTIME], 'Office 文件轉換'),
+    ('Calibre', ['calibre/ebook-convert.exe'], '電子書'),
+    ('yt-dlp', ['yt-dlp.exe', 'deno.exe'], '網址下載'),
+    ('Ghostscript', ['ghostscript/bin/gswin64c.exe', 'ghostscript/iccprofiles/srgb.icc'] + ['ghostscript/bin/' + d for d in VC_RUNTIME], 'PDF/A'),
+    ('OCR 語言資料', ['pdf-ocr/tessdata/eng.traineddata', 'pdf-ocr/tessdata/chi_tra.traineddata'], 'PDF 文字辨識'),
+    ('離線文字模型', ['pdf-ai/llama-completion.exe', 'pdf-ai/model.gguf'] + ['pdf-ai/' + d for d in VC_RUNTIME], 'AI 摘要、翻譯、會議總結'),
+    ('語音辨識模型', ['models/ggml-base.bin'], 'AI 字幕、音檔轉文字、會議總結'),
+    ('中文字型', ['fonts/NotoSansTC-Regular.otf'], '浮水印、字幕'),
+    ('WebView2 離線安裝檔', ['WebView2-offline-x64.exe'], '沒有 WebView2 的電腦開啟視窗'),
+]
+
+def missing_components():
+    """Bundled pieces that are absent - each one silently disables features on a clean PC, so the window
+    and the self test name them instead."""
+    out = []
+    for name, files, use in COMPONENTS:
+        lost = [f for f in files if not os.path.isfile(bundled(*f.split('/')))]
+        if lost: out.append(dict(name=name, use=use, files=lost))
+    return out
 
 VIDEO = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'gif']
 AUDIO = ['mp3', 'aac', 'm4a', 'wav', 'flac', 'ogg', 'opus']
@@ -96,6 +120,8 @@ for e in ['srt', 'ass', 'ssa', 'vtt', 'sub', 'lrc']: EXT_CAT[e] = 'subtitle'
 for e in ['obj', 'stl', 'ply', 'glb', 'gltf', 'off', '3mf']: EXT_CAT[e] = 'model'
 UNSUPPORTED = {'kfx': '亞馬遜 KFX 有 DRM，無法轉換', 'key': 'Apple Keynote 專有格式，請先在 Keynote 匯出', 'numbers': 'Apple Numbers 專有格式，請先匯出',
                'wps': 'WPS 舊格式支援有限', 'azw': '舊 Kindle 格式多半有 DRM'}
+# conversions deliberately not offered (source ext, target)
+REMOVED = {('epub', 'mobi'), ('stl', 'glb')}
 PANDOC_IN = {'docx', 'odt', 'rtf', 'txt', 'md', 'markdown', 'html', 'htm', 'tex', 'rst', 'org', 'epub', 'fb2'}
 
 def targets_for(cat, ext=''):
@@ -118,17 +144,17 @@ def targets_for(cat, ext=''):
         t = []
         if CALIBRE: t += ['epub', 'mobi', 'azw3', 'pdf', 'docx', 'txt']
         elif ext in PANDOC_IN and PANDOC: t += ['docx', 'html', 'md', 'txt', 'odt']
-        return [x for x in t if x != ext]
+        return [x for x in t if x != ext and (ext, x) not in REMOVED]
     if cat == 'archive': return (['extract', 'zip', '7z'] if SEVENZIP else [])
     if cat == 'subtitle': return [x for x in ['srt', 'ass', 'vtt'] if x != ext]
-    if cat == 'model': return [x for x in ['glb', 'obj', 'stl', 'ply'] if x != ext]
+    if cat == 'model': return [x for x in ['glb', 'obj', 'stl', 'ply'] if x != ext and (ext, x) not in REMOVED]
     return []
 
 def suggest(cat, ext):
     t = targets_for(cat, ext)
     if not t: return None
     pref = {'doc': 'pdf' if 'pdf' in t else 'docx', 'sheet': 'pdf', 'ebook': 'epub' if 'epub' in t else 'docx', 'archive': 'extract',
-            'subtitle': 'srt' if ext != 'srt' else 'vtt', 'model': 'glb' if ext != 'glb' else 'stl'}.get(cat)
+            'subtitle': 'srt' if ext != 'srt' else 'vtt', 'model': next((x for x in ('glb', 'stl', 'obj') if x in t), None)}.get(cat)
     if pref in t: return pref
     return {'video': 'mp4' if ext != 'mp4' else 'webm', 'audio': 'mp3' if ext != 'mp3' else 'm4a',
             'image': 'webp' if ext not in ('webp',) else 'png', 'pdf': 'png', 'office': 'pdf'}.get(cat)
@@ -290,10 +316,16 @@ def work_slots():
     if mem_gb() <= 8.5: return 2
     return 4
 
+_ENC_ACTIVE = [0]; _ENC_LOCK = threading.Lock()
 def encoder_threads(opt=None):
+    """Encoder threads for the job being built right now.  The CPU is shared by the encodes that are actually
+    running, not by the size of the pool: a single video on a 4-thread office PC now gets all 4 threads
+    instead of 2 (and 16 on a 16-thread PC instead of 4).  ffmpeg runs at below-normal priority, so the PC
+    stays responsive; 'quiet' mode keeps its small fixed budget."""
     cores = os.cpu_count() or 2
     if (opt or {}).get('resource_mode') == 'quiet': return max(1, min(2, cores // 2))
-    return max(1, min(8, cores // max(2, auto_workers())))
+    with _ENC_LOCK: active = max(1, _ENC_ACTIVE[0])
+    return max(1, min(16, cores // active))
 
 def platform_info():
     import platform
@@ -317,7 +349,7 @@ def detect_hw():
       global _HW_CACHE
       _HW_CACHE = _HW_CACHE or os.path.join(data_dir(), 'hw_cache.json')
       try:
-          c = json.load(open(_HW_CACHE, encoding='utf-8'))
+          with open(_HW_CACHE, encoding='utf-8') as fh: c = json.load(fh)
           if FFMPEG and c.get('ffmpeg') == os.path.getmtime(FFMPEG) and time.time() - c.get('t', 0) < 7 * 86400:
               _HW = list(c.get('hw', [])); _HW_BUSY = False; return _HW
       except Exception: pass
@@ -327,7 +359,8 @@ def detect_hw():
                 r = run([FFMPEG, '-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=256x256:d=0.2', '-c:v', enc, '-f', 'null', '-'], timeout=8)
                 if r.returncode == 0: _HW.append(enc)
             except Exception: pass
-        try: json.dump(dict(hw=_HW, t=time.time(), ffmpeg=os.path.getmtime(FFMPEG)), open(_HW_CACHE, 'w', encoding='utf-8'))
+        try:
+            with open(_HW_CACHE, 'w', encoding='utf-8') as fh: json.dump(dict(hw=_HW, t=time.time(), ffmpeg=os.path.getmtime(FFMPEG)), fh)
         except Exception: pass
       _HW_BUSY = False
       return _HW
@@ -407,13 +440,13 @@ class Job:
         self.merge = merge; self.state = 'queued'; self.progress = 0.0; self.speed = ''; self.eta = None
         self.msg = ''; self.output = ''; self.proc = None; self.cancelled = False; self.started = None
         self.encoder = ''; self.elapsed = 0.0; self.out_size = 0; self.finished = 0
-        self.in_size = 0
+        self.in_size = 0; self.created = time.time()
         for f in files:
             try: self.in_size += os.path.getsize(f) if os.path.isfile(f) else 0
             except OSError: pass
         self.cat = 'tool' if tool else classify(files[0])[0]
         self.tool = tool; self.label = label
-        self.validation = ''; self.warnings = []; self.child = None
+        self.validation = ''; self.warnings = []; self.notes = []; self.child = None
 
     def info(self):
         nm = os.path.basename(self.files[0].rstrip('\\/')) or self.files[0]
@@ -424,7 +457,7 @@ class Job:
             speed = self.child.speed or self.msg or speed
         return dict(id=self.id, name=nm, target=self.target, label=self.label or '', kind=self.tool or '', state=self.state, progress=round(min(1, progress), 3), speed=speed,
                     eta=self.eta, msg=self.msg, output=self.output, encoder=self.encoder, elapsed=round(self.elapsed, 2),
-                    in_size=self.in_size, out_size=self.out_size, finished=self.finished, retry=self.tool not in ('rec',), validation=self.validation)
+                    in_size=self.in_size, out_size=self.out_size, finished=self.finished, retry=self.tool not in ('rec',), validation=self.validation, notes=self.notes, created=self.created)
 
     def measure(self):
         p = self.output
@@ -460,6 +493,7 @@ class Engine:
             for j in jobs:
                 self.jobs[j.id] = j; self.order.append(j.id)
                 heavy = j.cat in ('video', 'audio') and not (j.cat == 'video' and target == 'srt')
+                j._heavy = heavy
                 (self.pool if heavy else self.light).submit(self._run, j)
         return [j.id for j in jobs]
 
@@ -468,7 +502,7 @@ class Engine:
         jobs = [Job(files, tool, opt, True, tool=tool, label=label)] if together else [Job([f], tool, opt, tool=tool, label=label) for f in files]
         with self.lock:
             for j in jobs:
-                self.jobs[j.id] = j; self.order.append(j.id)
+                self.jobs[j.id] = j; self.order.append(j.id); j._heavy = heavy
                 (self.pool if heavy else self.light).submit(self._run, j)
         return [j.id for j in jobs]
 
@@ -503,9 +537,18 @@ class Engine:
         self.pool.shutdown(wait=False, cancel_futures=True)
         self.light.shutdown(wait=False, cancel_futures=True)
 
-    def status(self):
+    def status(self, tail=None):
+        """All jobs, or (tail=N) only what the activity list can show: the last N plus anything running.
+        The window polls this every 0.7 s; with 1,000 queued files the full list was ~0.5 MB per poll."""
         with self.lock:
-            return [self.jobs[i].info() for i in self.order]
+            if tail is None or len(self.order) <= tail: return [self.jobs[i].info() for i in self.order]
+            cut = len(self.order) - tail
+            return [self.jobs[i].info() for k, i in enumerate(self.order) if k >= cut or self.jobs[i].state == 'running']
+
+    def counts(self):
+        with self.lock:
+            active = sum(1 for i in self.order if self.jobs[i].state in ('queued', 'running'))
+        return active
 
     def _run(self, j):
         if getattr(j, '_nested', False): return self._run_guarded(j)
@@ -527,6 +570,15 @@ class Engine:
 
     def _run_guarded(self, j):
         if j.cancelled: return
+        heavy = getattr(j, '_heavy', False) and not getattr(j, '_nested', False)
+        if heavy:
+            with _ENC_LOCK: _ENC_ACTIVE[0] += 1
+        try: self._run_job(j)
+        finally:
+            if heavy:
+                with _ENC_LOCK: _ENC_ACTIVE[0] -= 1
+
+    def _run_job(self, j):
         j.state = 'running'; j.started = time.time()
         try:
             self._check_space(j)
@@ -558,7 +610,7 @@ class Engine:
                 self._model(j)
             else: raise RuntimeError('無法辨識來源檔案類型')
             if j.cancelled: raise InterruptedError
-            if j.tool != 'workflow': self.validate(j)
+            if j.tool not in ('workflow', 'hardware_test'): self.validate(j)   # the hardware test writes its own result summary
             j.state = 'partial' if j.warnings else 'done'; j.progress = 1.0; j.msg = '部分完成：' + '；'.join(j.warnings)[:240] if j.warnings else '完成'; j.eta = 0
         except InterruptedError:
             j.state = 'cancelled'; j.msg = '已取消'
@@ -607,6 +659,7 @@ class Engine:
         with self.lock:
             self.jobs[j.id] = j; self.order.append(j.id)
             if old.state != 'done': self.order.remove(jid)
+            j._heavy = heavy
             (self.pool if heavy else self.light).submit(self._run, j)
         return j.id
 
@@ -776,7 +829,8 @@ class Engine:
         if j.cancelled: raise InterruptedError
 
     # ---------- images ----------
-    def _open_img(self, path):
+    def _open_img(self, path, want=None):
+        """want(width, height) -> scale (<1) the caller will shrink to, measured on the upright picture."""
         from PIL import Image
         ext = classify(path)[1]
         if ext in RAW:
@@ -792,7 +846,17 @@ class Engine:
         if ext in ('heic', 'heif'):
             return decode_with_ffmpeg(path)
         try:
-            im = Image.open(path); im.load(); return im
+            im = Image.open(path)
+            if want and im.format == 'JPEG':
+                # JPEG can decode straight at 1/2, 1/4 or 1/8 size (libjpeg DCT scaling, same as Pillow's
+                # thumbnail()): a 24 MP photo going to 1920 px decodes 4-8x faster with a fraction of the RAM.
+                W, H = im.size
+                try: orient = im.getexif().get(0x0112, 1)
+                except Exception: orient = 1
+                s = want(*((H, W) if orient in (5, 6, 7, 8) else (W, H)))
+                if s and s <= 0.5:
+                    im.draft(None, (max(1, math.ceil(W * s)), max(1, math.ceil(H * s))))
+            im.load(); return im
         except Exception:
             if ext == 'avif': return decode_with_ffmpeg(path)      # Pillow without AVIF support
             raise
@@ -801,21 +865,9 @@ class Engine:
         from PIL import Image, ImageOps
         o = j.opt; t = j.target; preset = o.get('preset', 'balanced'); q = PRESET[preset]['q']
         h = int(o.get('height') or 0)
-        if t == 'pdf':
-            ims = []
-            cap = {'high': 0, 'balanced': 3000, 'small': 2000}[preset]   # long side; 2000 px ≈ A4 at 240 dpi
-            for i, f in enumerate(j.files):
-                if j.cancelled: raise InterruptedError
-                im = flatten(ImageOps.exif_transpose(self._open_img(f)))
-                if h and im.height > h: im = im.resize((round(im.width * h / im.height), h), Image.LANCZOS)
-                if cap and max(im.size) > cap: im.thumbnail((cap, cap), Image.LANCZOS)
-                ims.append(im); j.progress = (i + 1) / (len(j.files) + 1)
-            out = self.out_path(j, j.files[0], 'pdf'); j.output = out
-            # Pillow stores RGB pages as JPEG inside the PDF -> quality controls the size
-            ims[0].save(out, save_all=True, append_images=ims[1:], resolution=150, quality=q, optimize=True)
-            j.encoder = 'Pillow'; return
-        im = ImageOps.exif_transpose(self._open_img(j.files[0]))
-        if h and h < im.height: im = im.resize((max(1, round(im.width * h / im.height)), h), Image.LANCZOS)   # never upscale
+        if t == 'pdf': return self._images_pdf(j, preset, h, q)
+        im = ImageOps.exif_transpose(self._open_img(j.files[0], want=(lambda W, H: h / H) if h else None))
+        if h and h < im.height: im = im.resize((max(1, round(im.width * h / im.height)), h), Image.LANCZOS, reducing_gap=3.0)   # never upscale
         out = self.out_path(j, j.files[0], t); j.output = out; j.encoder = 'Pillow'
         tsize = float(o.get('target_mb') or 0) * 1024 * 1024
         if t in ('jpg', 'bmp'): im = flatten(im)
@@ -857,13 +909,71 @@ class Engine:
             except OSError: pass
         with open(out, 'wb') as fh: fh.write(data)
 
+    def _images_pdf(self, j, preset, h, q):
+        """Pictures -> one PDF, written page by page.  Each picture is decoded, scaled and JPEG-encoded in a
+        small worker pool and goes straight to disk, so 300 phone photos need the RAM of a few pictures
+        (the old way held every decoded picture at once: ~70 MB each for 24 MP) and use several cores."""
+        from PIL import Image, ImageOps
+        cap = {'high': 0, 'balanced': 3000, 'small': 2000}[preset]   # long side; 2000 px ≈ A4 at 240 dpi
+
+        def scale(W, H):
+            k = 1.0
+            if h and H > h: k = h / H
+            if cap and max(W, H) * k > cap: k = cap / max(W, H)
+            return k if k < 1 else None
+
+        def page(f):
+            if j.cancelled: raise InterruptedError
+            im = flatten(ImageOps.exif_transpose(self._open_img(f, want=scale)))
+            if h and im.height > h: im = im.resize((max(1, round(im.width * h / im.height)), h), Image.LANCZOS, reducing_gap=3.0)
+            if cap and max(im.size) > cap: im.thumbnail((cap, cap), Image.LANCZOS)
+            if im.mode not in ('RGB', 'L'): im = im.convert('RGB')
+            b = io.BytesIO(); im.save(b, 'JPEG', quality=q, optimize=True)      # same encoding Pillow's PDF writer used
+            return im.size, im.mode, b.getvalue()
+
+        out = self.out_path(j, j.files[0], 'pdf'); j.output = out
+        n = len(j.files); workers = max(1, min(light_workers(), n)); window = workers * 2
+        offsets = {}; kids = []; obj = [2]                     # 1 = catalog, 2 = page tree (written last)
+        def new_id(): obj[0] += 1; return obj[0]
+        with open(out, 'wb') as fh, ThreadPoolExecutor(max_workers=workers) as ex:
+            fh.write(b'%PDF-1.4\n%\xe2\xe3\xcf\xd3\n')
+            def put(oid, body, stream=None):
+                offsets[oid] = fh.tell()
+                fh.write(f'{oid} 0 obj\n'.encode() + body)
+                if stream is not None: fh.write(b'\nstream\n' + stream + b'\nendstream')
+                fh.write(b'\nendobj\n')
+            futs = [ex.submit(page, f) for f in j.files[:window]]
+            for i in range(n):
+                try: (w, hh), mode, data = futs[i].result()
+                except BaseException:
+                    for x in futs[i:]: x.cancel()
+                    raise
+                if i + window < n: futs.append(ex.submit(page, j.files[i + window]))
+                futs[i] = None
+                pw, ph = w * 72 / 150, hh * 72 / 150             # 150 dpi page size, as before
+                im_id, c_id, p_id = new_id(), new_id(), new_id()
+                put(im_id, (f'<< /Type /XObject /Subtype /Image /Width {w} /Height {hh} /ColorSpace /'
+                            f'{"DeviceGray" if mode == "L" else "DeviceRGB"} /BitsPerComponent 8 /Filter /DCTDecode /Length {len(data)} >>').encode(), data)
+                content = f'q {pw:.4f} 0 0 {ph:.4f} 0 0 cm /Im0 Do Q'.encode()
+                put(c_id, f'<< /Length {len(content)} >>'.encode(), content)
+                put(p_id, (f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.4f} {ph:.4f}] '
+                           f'/Resources << /XObject << /Im0 {im_id} 0 R >> /ProcSet [/PDF /ImageB /ImageC] >> /Contents {c_id} 0 R >>').encode())
+                kids.append(p_id); j.progress = 0.98 * (i + 1) / n
+            put(2, f'<< /Type /Pages /Count {len(kids)} /Kids [{" ".join(f"{k} 0 R" for k in kids)}] >>'.encode())
+            put(1, b'<< /Type /Catalog /Pages 2 0 R >>')
+            xref = fh.tell(); total = obj[0] + 1
+            fh.write(f'xref\n0 {total}\n0000000000 65535 f \n'.encode())
+            fh.write(''.join(f'{offsets[k]:010d} 00000 n \n' for k in range(1, total)).encode())
+            fh.write(f'trailer\n<< /Size {total} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
+        j.encoder = 'Pillow'
+
     # ---------- pdf ----------
-    @pdfium_serial
     def _pdf(self, j):
         if j.target == 'txt': return self._pdf_text(j)
         if j.target in ('docx', 'epub'): return self._ebook(j)
         preset = j.opt.get('preset', 'balanced')
         if j.merge or j.target == 'pdf':
+            # pypdf is pure Python: it does not need the PDFium lock, so merges no longer wait behind page rendering
             from pypdf import PdfWriter
             w = PdfWriter()
             for f in j.files:
@@ -883,20 +993,48 @@ class Engine:
             if not j.merge and os.path.getsize(out) >= os.path.getsize(j.files[0]):
                 shutil.copyfile(j.files[0], out); j.encoder = 'pypdf（原檔已是最小，直接複製）'; return
             j.encoder = 'pypdf'; return
+        self._pdf_pages(j, preset)
+
+    def _pdf_pages(self, j, preset):
+        """PDF -> one picture per page.  Only the PDFium calls hold the lock (PDFium is not thread-safe);
+        PNG / JPG encoding - most of the time per page - runs in a few worker threads, overlapping with
+        the rendering of the next pages."""
         import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(j.files[0]); n = len(pdf)
+        from collections import deque
         dpi = {'high': 200, 'balanced': 150, 'small': 100}[preset]
-        q = PRESET[preset]['q']
-        folder = self.out_path(j, j.files[0], 'x')[:-2]
-        folder = unique_path(folder); os.makedirs(folder); j.output = folder; j.encoder = 'PDFium'
-        for i in range(n):
-            if j.cancelled: raise InterruptedError
-            img = pdf[i].render(scale=dpi / 72).to_pil()
-            p = os.path.join(folder, f'{i+1:03d}.{j.target}')
-            if j.target == 'jpg': img.convert('RGB').save(p, quality=q, optimize=True, progressive=True)
-            else: img.save(p, optimize=preset == 'small')
-            j.progress = (i + 1) / n
-        pdf.close()
+        q = PRESET[preset]['q']; t = j.target
+        with PDFIUM_LOCK:
+            pdf = pdfium.PdfDocument(j.files[0]); n = len(pdf)
+        try:
+            folder = self.out_path(j, j.files[0], 'x')[:-2]
+            folder = unique_path(folder); os.makedirs(folder); j.output = folder; j.encoder = 'PDFium'
+
+            def save(img, p):
+                if t == 'jpg': img.convert('RGB').save(p, quality=q, optimize=True, progressive=True)
+                else: img.save(p, optimize=preset == 'small')
+
+            workers = max(1, min(4, (os.cpu_count() or 2) - 1, light_workers()))
+            pending = deque(); done = [0]
+            def settle(limit):
+                while len(pending) > limit:
+                    pending.popleft().result(); done[0] += 1; j.progress = done[0] / n
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                try:
+                    for i in range(n):
+                        if j.cancelled: raise InterruptedError
+                        with PDFIUM_LOCK:
+                            page = pdf[i]
+                            bitmap = page.render(scale=dpi / 72)
+                            img = bitmap.to_pil().copy()          # own the pixels before PDFium frees its buffer
+                            bitmap.close(); page.close()
+                        pending.append(ex.submit(save, img, os.path.join(folder, f'{i+1:03d}.{t}')))
+                        settle(workers * 2)                       # bounded: at most a few rendered pages in RAM
+                    settle(0)
+                except BaseException:
+                    for f in pending: f.cancel()
+                    raise
+        finally:
+            with PDFIUM_LOCK: pdf.close()
 
     @staticmethod
     def _shrink_pdf_images(page, quality, max_side):
@@ -1066,6 +1204,8 @@ def format_table():
         if cat in ('sheet',) and not SOFFICE: note.append('需安裝 LibreOffice')
         if cat == 'doc' and not SOFFICE: note.append('轉 PDF 與 .doc 需 LibreOffice')
         if cat == 'ebook' and not CALIBRE: note.append('MOBI／AZW3 需 Calibre；EPUB 可用')
+        if cat == 'ebook': note.append('EPUB 不提供轉 MOBI')
+        if cat == 'model': note.append('STL 不提供轉 GLB')
         for e in exts:
             if e in UNSUPPORTED: note.append(f'{e.upper()}：{UNSUPPORTED[e]}')
         rows.append(dict(cat=CAT_ZH[cat], key=cat, inputs=exts, outputs=outs, engine=engine, note='；'.join(note)))

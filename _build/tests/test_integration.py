@@ -5,11 +5,11 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 (ROOT/'scratch').mkdir(exist_ok=True); tempfile.tempdir=str(ROOT/'scratch')
 sys.path.insert(0, str(ROOT / 'src'))
-sys.path.insert(0, str(ROOT / 'vendor'))
+sys.path.insert(0, 'E:/四維八德/_build/vendor')
 import engine as E
 import workflows as W
 import capture as C
-BASE = str(ROOT.parent)
+BASE = str(ROOT / 'release')
 E.base_dir = lambda: BASE
 E.FFMPEG = E.find_tool('ffmpeg'); E.SEVENZIP = E.find_tool('7z')
 E.PANDOC = E.find_tool('pandoc'); E.SOFFICE = E.find_soffice(); E.CALIBRE = E._calibre()
@@ -133,7 +133,9 @@ class Integration(unittest.TestCase):
     def test_20_watch_tracks_changed_file_and_cleared_completion(self):
         w=C.Watcher.__new__(C.Watcher);w.lock=threading.RLock();w.rules=[dict(folder=str(self.d),target='png',out_dir=str(self.d/'watched'))];w.seen={str(self.d):{}};w.sizes={};w.state_file=str(self.d/'watch-test.json')
         api=SimpleNamespace(_eng=self.eng,base_opt=lambda:{'preset':'balanced'});w.api=api
-        with patch.object(w,'_list',return_value=[str(self.d/'image.jpg')]):
+        def image_list(rule,stats):
+            image=str(self.d/'image.jpg');st=os.stat(image);stats[image]=(st.st_size,st.st_mtime);return [image]
+        with patch.object(w,'_list',side_effect=image_list):
             w._tick();w._tick()
             entry=w.seen[str(self.d)][str(self.d/'image.jpg')];jid=entry['job'];end=time.time()+10
             while self.eng.jobs[jid].state in ('queued','running') and time.time()<end:time.sleep(.02)
@@ -196,7 +198,8 @@ class Integration(unittest.TestCase):
         self.assertFalse(ST._safe_root(str(self.d/'out'),str(self.d/'out')))
     def test_30_hardware_short_test(self):
         j=self.job(['land.mp4'],'hardware_test');j.tool='hardware_test';j.cat='tool';self.run_ok(j)
-        data=json.loads(Path(j.output).read_text(encoding='utf-8'));self.assertEqual(len(data['tests']),4);self.assertTrue(all(t['state']=='done' for t in data['tests']))
+        self.assertEqual(Path(j.output).suffix,'.txt');self.assertIn('CPU',Path(j.output).read_text(encoding='utf-8-sig'))
+        data=json.loads(Path(j.output).with_suffix('.json').read_text(encoding='utf-8'));self.assertEqual(len(data['tests']),4);self.assertTrue(all(t['state']=='done' for t in data['tests']))
         self.assertEqual(list(Path(j.output).parent.glob('zdgc_disk_*.tmp')),[])
 
     def test_31_disk_check_plan_has_no_repair_switch(self):
@@ -204,17 +207,18 @@ class Integration(unittest.TestCase):
         devices=dict(drives=[dict(drive='C:',filesystem='NTFS',disk_number=0,free=10**9)],recovery=False)
         p=DT.plan('check','C:',devices=devices);self.assertEqual(p['command'][1:],['C:']);self.assertTrue(p['available'])
         p=DT.plan('repair','C:',devices=devices);self.assertEqual(p['command'][1:],['C:','/f']);self.assertNotIn('/r',p['command']);self.assertNotIn('/x',p['command'])
-    def test_32_recovery_rejects_same_or_same_physical_disk(self):
+    def test_32_removed_recovery_mode_is_rejected(self):
         import disk_tools as DT
         devices=dict(drives=[dict(drive=d,filesystem='NTFS',disk_number=0,free=10**9) for d in ('C:','D:')],recovery=False)
         with self.assertRaises(ValueError):DT.plan('recovery','C:','C:',devices=devices)
         with self.assertRaises(ValueError):DT.plan('recovery','C:','D:',devices=devices)
-    def test_33_recovery_mode_and_filters(self):
+    def test_33_repair_plan_requires_confirmation_and_fixed_switch(self):
         import disk_tools as DT
         devices=dict(drives=[dict(drive='C:',filesystem='NTFS',disk_number=0,free=10**9),dict(drive='D:',filesystem='exFAT',disk_number=1,free=10**9)],recovery=True)
-        with patch.object(DT,'winfr_path',return_value='fixture-winfr.exe'):
-            p=DT.plan('recovery','C:','D:','photos','regular',devices);self.assertIn('/n',p['command']);self.assertIn('*.jpg',p['command']);self.assertNotIn('/a',p['command'])
-            with self.assertRaises(ValueError):DT.plan('recovery','D:','C:','photos','regular',devices)
+        p=DT.plan('repair','C:',devices=devices)
+        self.assertIn('/f',p['command']);self.assertTrue(p['warnings']);self.assertNotIn('/r',p['command'])
+        with self.assertRaises(ValueError):DT.launch(p,p['token'],False)
+        with self.assertRaises(ValueError):DT.plan('recovery','D:','C:','photos','regular',devices)
     def test_34_disk_launch_requires_confirmation(self):
         import disk_tools as DT
         p=dict(token='fixture',created=time.time())

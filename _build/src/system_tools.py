@@ -86,11 +86,56 @@ def run_tests(eng, job):
     finally:
         result['cancelled']=job.cancelled
         with open(out,'w',encoding='utf-8') as fh:json.dump(result,fh,ensure_ascii=False,indent=2)
+        lines=report_lines(result)
         txt=os.path.splitext(out)[0]+'.txt'
-        with open(txt,'w',encoding='utf-8-sig') as fh:
-            fh.write('四維八德硬體短測\n'+result['note']+'\n')
-            for r in result['tests']:fh.write(r['name']+'：'+json.dumps(r,ensure_ascii=False)+'\n')
-        job.output=out;job.keep_output=True;job.encoder='電腦硬體短測'
+        with open(txt,'w',encoding='utf-8-sig') as fh:fh.write('\r\n'.join(lines)+'\r\n')
+        # the readable report is the result (the JSON next to it is for support / comparison)
+        job.output=txt;job.keep_output=True;job.encoder='電腦硬體短測'
+        job.notes=[l for l in lines[2:] if l.strip()]
+        job.validation=summary(result)
+
+GPU_NAMES={'h264_nvenc':'NVIDIA NVENC','h264_qsv':'Intel Quick Sync','h264_amf':'AMD AMF','libx264':'CPU（x264）'}
+
+def _grade(value, fast, ok):
+    return '很快' if value>=fast else '正常' if value>=ok else '偏慢'
+
+def _test(result, name):
+    return next((t for t in result['tests'] if t['name']==name), None)
+
+def summary(result):
+    parts=[]
+    c=_test(result,'CPU 短測');m=_test(result,'記憶體短測');d=_test(result,'磁碟讀寫短測');g=_test(result,'GPU／影音編碼短測')
+    if c and c['state']=='done':parts.append(f"CPU {_grade(c['mbps'],1500,700)}")
+    if m and m['state']=='done':parts.append(f"記憶體 {_grade(m['mbps'],15000,5000)}")
+    if d and d['state']=='done':parts.append(f"磁碟 寫 {d['write_mbps']:.0f}／讀 {d['read_mbps']:.0f} MB/s")
+    if g and g['state']=='done':parts.append(GPU_NAMES.get(g['encoder'],g['encoder'])+' 可用')
+    bad=[t['name'] for t in result['tests'] if t['state']!='done']
+    if bad:parts.append('未通過：'+'、'.join(bad))
+    return ' · '.join(parts) or '沒有完成任何測試'
+
+def report_lines(result):
+    i=result['info'];L=['四維八德 電腦硬體短測　'+time.strftime('%Y-%m-%d %H:%M'),'',
+       '【電腦資訊】',f"處理器：{i.get('cpu','')}",f"系統：{i.get('system','')}（{i.get('arch','')}）",
+       f"記憶體：{i.get('ram','')} GB　邏輯執行緒：{i.get('cores','')}",
+       f"影音硬體編碼：{'、'.join(GPU_NAMES.get(x,x) for x in i.get('gpu_encoders') or []) or '沒有（使用 CPU）'}"]
+    for disk in i.get('disks') or []:
+        L.append(f"磁碟 {disk['path']}：可用 {disk['free']/2**30:.0f} GB／共 {disk['total']/2**30:.0f} GB")
+    L+=['','【測試結果】']
+    for t in result['tests']:
+        if t['state']!='done':L.append(f"✗ {t['name']}：未通過（{t.get('detail','')}）");continue
+        if t['name']=='CPU 短測':L.append(f"✓ CPU：{t['mbps']:,.0f} MB/s（{_grade(t['mbps'],1500,700)}；單執行緒運算）")
+        elif t['name']=='記憶體短測':L.append(f"✓ 記憶體：{t['mbps']:,.0f} MB/s（{_grade(t['mbps'],15000,5000)}；資料一致性正常）")
+        elif t['name']=='磁碟讀寫短測':
+            kind='很快，NVMe 固態硬碟等級' if t['write_mbps']>=800 else '正常，固態硬碟等級' if t['write_mbps']>=200 else '一般，傳統硬碟等級' if t['write_mbps']>=60 else '偏慢'
+            L.append(f"✓ 磁碟 {t['detail'].split('·')[-1].strip()}：寫入 {t['write_mbps']:,.0f} MB/s、讀取 {t['read_mbps']:,.0f} MB/s（{kind}）")
+        elif t['name']=='GPU／影音編碼短測':
+            L.append(f"✓ 影音編碼：{GPU_NAMES.get(t['encoder'],t['encoder'])} 可用（{t['seconds']:.2f} 秒）")
+    if result.get('cancelled'):L.append('（測試已取消，結果不完整）')
+    L+=['','【轉檔建議】',f"同時處理工作數：{i.get('slots','')} 個；影片同時轉檔：{i.get('heavy','')} 個",
+        '影片轉檔會優先使用顯示卡硬體編碼。' if i.get('gpu_encoders') else '沒有可用的顯示卡編碼，影片會用 CPU 轉檔，速度取決於處理器。']
+    if (i.get('ram') or 0)<=4.5:L.append('記憶體較少，建議使用「省資源模式」並一次處理較少檔案。')
+    L+=['','說明：'+result['note']]
+    return L
 
 def _safe_root(path, root):
     try:

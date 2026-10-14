@@ -1,6 +1,7 @@
 """四維八德: screen recorder, web video downloader, watched folders, finish actions."""
 import os, re, sys, json, time, shutil, subprocess, threading, zipfile, urllib.request
 import engine as E
+import file_actions as FA
 
 NOWIN = E.NOWIN
 
@@ -90,6 +91,7 @@ class Recorder:
                         threading.Thread(target=self._watch, daemon=True).start()
                         return j.id
                     last_err = p.stderr.read().decode('utf-8', 'replace')
+                    p.stdin.close(); p.stderr.close()
             import tools
             raise RuntimeError('無法開始錄影：' + tools.ff_error(last_err))
 
@@ -110,6 +112,7 @@ class Recorder:
             except Exception: pass
             try: p.wait(15)
             except subprocess.TimeoutExpired: p.kill(); p.wait()
+            p.stdin.close(); p.stderr.close()
             self.proc = None
             j.elapsed = time.time() - j.started; j.speed = ''
             if j.cancelled:
@@ -144,34 +147,12 @@ def ytdlp():
     return E.find_tool('yt-dlp')
 
 def deno():
-    for p in (E.bundled('deno.exe'), os.path.join(E.data_dir(), 'tools', 'deno.exe')):
-        if os.path.isfile(p): return p
-    return shutil.which('deno')
-
-DENO_URL = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
+    p = E.bundled('deno.exe')
+    return p if os.path.isfile(p) else None
 
 def ensure_deno(j):
-    """YouTube needs a JavaScript runtime since late 2025; fetch Deno once (~40 MB) next to the other tools."""
-    p = deno()
-    if p: return p
-    if os.name != 'nt': return None
-    dest = E.bundled()
-    try:
-        os.makedirs(dest, exist_ok=True); open(os.path.join(dest, '.w'), 'w').close(); os.remove(os.path.join(dest, '.w'))
-    except OSError:
-        dest = os.path.join(E.data_dir(), 'tools'); os.makedirs(dest, exist_ok=True)
-    j.speed = '第一次使用，下載 YouTube 解析元件…'
-    tmp = os.path.join(dest, 'deno.zip.part')
-    try:
-        with urllib.request.urlopen(urllib.request.Request(DENO_URL, headers={'User-Agent': 'ZDGC'}), timeout=30) as r, open(tmp, 'wb') as fh:
-            shutil.copyfileobj(r, fh, 1 << 20)
-        with zipfile.ZipFile(tmp) as z: z.extract('deno.exe', dest)
-        return os.path.join(dest, 'deno.exe')
-    except Exception:
-        return None
-    finally:
-        try: os.remove(tmp)
-        except OSError: pass
+    """YouTube needs a JavaScript runtime; Deno ships in tools\\ (nothing is downloaded at run time)."""
+    return deno()
 
 QUALITY = {
     'best_compat': ['-f', 'bv*[vcodec^=avc1][height<=2160]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b', '--merge-output-format', 'mp4'],
@@ -213,10 +194,10 @@ class Downloader:
     def _dl(self, j, url, o, exe):
         folder = o.get('out_dir') or downloads_dir(); os.makedirs(folder, exist_ok=True)
         q = o.get('quality', 'best_compat')
-        cmd = [exe, '--newline', '--no-colors', '--ignore-config', '--no-mtime', '--ffmpeg-location', os.path.dirname(E.FFMPEG) if E.FFMPEG else '',
+        cmd = [exe, '--newline', '--no-colors', '--encoding', 'utf-8', '--ignore-config', '--no-mtime', '--ffmpeg-location', os.path.dirname(E.FFMPEG) if E.FFMPEG else '',
                '-P', folder, '-o', '%(title).120B [%(id)s].%(ext)s', '--windows-filenames', '--progress-template',
                'download:ZDGC %(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(info.title)s',
-               '--print', 'after_move:ZDGCFILE %(filepath)s', '--no-simulate', '--retries', '5', '--fragment-retries', '5', '-N', '4']
+               '--print', 'after_move:ZDGCFILE %(filepath)j', '--no-simulate', '--retries', '5', '--fragment-retries', '5', '-N', '4']
         cmd += QUALITY.get(q, QUALITY['best_compat'])
         if not o.get('playlist'): cmd += ['--no-playlist']
         if o.get('subs'): cmd += ['--write-subs', '--sub-langs', 'zh-Hant,zh-TW,zh.*,en.*', '--convert-subs', 'srt']
@@ -226,7 +207,8 @@ class Downloader:
             if d: cmd += ['--js-runtimes', f'deno:{d}']
         cmd.append(url)
         files = []; err = []
-        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=E.LOWPRI)
+        child_env=dict(os.environ,PYTHONIOENCODING='utf-8',PYTHONUTF8='1')
+        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', env=child_env, creationflags=E.LOWPRI)
         th = threading.Thread(target=lambda: err.extend(j.proc.stderr.readlines()), daemon=True); th.start()
         part = 0
         for line in j.proc.stdout:
@@ -243,7 +225,8 @@ class Downloader:
                 if m: j.eta = int(m.group(1)) * 60 + int(m.group(2)) if not m.group(3) else int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
                 if title and title != 'NA': j.label = '下載：' + title[:40]
             elif line.startswith('ZDGCFILE '):
-                files.append(line[9:].strip()); j.output = files[-1]
+                completed=FA.completed_path(line,folder)
+                if completed and completed not in files:files.append(completed);j.output=completed
             elif '[Merger]' in line or '[ExtractAudio]' in line:
                 j.speed = '合併影音中…' if 'Merger' in line else '轉成音訊中…'
         j.proc.wait(); th.join(2)
@@ -256,7 +239,7 @@ class Downloader:
             elif 'Unsupported URL' in msg: hint = '（不支援這個網站）'
             elif 'HTTP Error 403' in msg or 'nsig' in msg or 'Requested format is not available' in msg: hint = '（網站改版，請按「更新下載元件」後再試）'
             raise RuntimeError(msg[:220] + hint)
-        if not files: raise RuntimeError('下載程序沒有回報任何完成檔案')
+        if not files: raise RuntimeError('下載元件沒有回報可開啟的完成檔案，請檢查儲存資料夾；已保留下載內容')
         j.encoder = 'yt-dlp' + (f'（{len(files)} 個檔案）' if len(files) > 1 else '')
         if len(files) > 1: j.output = os.path.dirname(files[0])
         if j.proc.returncode != 0:
@@ -288,20 +271,31 @@ class Watcher:
         for r in self.rules:
             key = r['folder']
             if key not in self.seen:
-                self.seen[key] = {} if r.get('existing') else {p: dict(sig=[os.path.getsize(p), os.path.getmtime(p)], state='done') for p in self._list(r)}
+                stats = {}; files = self._list(r, stats)
+                self.seen[key] = {} if r.get('existing') else {p: dict(sig=list(stats[p]), state='done') for p in files}
         self._save()
 
-    def _list(self, r):
+    def _list(self, r, stats=None):
+        """Files to consider, via os.scandir: on Windows size and date come with the directory listing, so a
+        folder of thousands of files is checked every 4 s without one extra disk query per file."""
         out = []; folder = r['folder']; skip = os.path.normcase(os.path.abspath(self._out(r)))
+        if stats is None: stats = {}
         if not os.path.isdir(folder): return out
-        walker = os.walk(folder) if r.get('recursive') else [(folder, [], [f for f in os.listdir(folder)])]
-        for root, dirs, fs in walker:
+        todo = [folder]
+        while todo:
+            root = todo.pop()
             if self._inside(root, skip): continue
-            dirs[:] = [d for d in dirs if not self._inside(os.path.join(root, d), skip)]
-            for f in fs:
-                p = os.path.join(root, f)
-                if os.path.isfile(p) and E.classify(p)[0] and not f.startswith(('~$', '.')) and not f.endswith(('.part', '.tmp', '.crdownload')):
-                    out.append(p)
+            try: entries = list(os.scandir(root))
+            except OSError: continue
+            for e in sorted(entries, key=lambda e: e.name):
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        if r.get('recursive'): todo.append(e.path)
+                        continue
+                    f = e.name
+                    if not e.is_file() or not E.classify(f)[0] or f.startswith(('~$', '.')) or f.endswith(('.part', '.tmp', '.crdownload')): continue
+                    st = e.stat(); stats[e.path] = (st.st_size, st.st_mtime); out.append(e.path)
+                except OSError: continue
         return out
 
     @staticmethod
@@ -327,10 +321,9 @@ class Watcher:
         with self.lock: rules = list(self.rules)
         changed = False
         for r in rules:
-            seen = self.seen.setdefault(r['folder'], {})
-            for p in self._list(r):
-                try: sz = (os.path.getsize(p), os.path.getmtime(p))
-                except OSError: continue
+            seen = self.seen.setdefault(r['folder'], {}); stats = {}
+            for p in self._list(r, stats):
+                sz = stats[p]
                 entry = seen.get(p)
                 if entry == 1: seen[p] = dict(sig=list(sz), state='done'); changed = True; continue
                 if entry and entry.get('state') == 'pending':

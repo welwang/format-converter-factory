@@ -1,6 +1,6 @@
-pywebview
 pyinstaller
 pillow
+numpy
 pypdf
 pypdfium2
 rawpy
@@ -8,3 +8,10 @@ psd-tools
 resvg-py
 trimesh
 cryptography
+pymupdf
+pikepdf
+python-docx
+python-pptx
+openpyxl
+pyhanko
+qrcode

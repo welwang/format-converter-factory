@@ -24,13 +24,21 @@ def _dicts():
             st = _load('STPhrases.txt'); st_c = _load('STCharacters.txt')
             tw = _load('TWPhrases.txt'); tw.update({k: v for k, v in _load('TWVariantsPhrases.txt').items() if k not in tw})
             tw_v = _load('TWVariants.txt')
-            _D = (st, max(map(len, st)), st_c, tw, max(map(len, tw)), tw_v)
+            _D = (st, _starts(st), st_c, tw, _starts(tw), tw_v)
     return _D
 
-def _maxmatch(text, phrases, maxlen, chars):
+def _starts(phrases):
+    """Longest phrase per first character: most characters start no phrase at all, so the
+    longest-match loop below skips straight to the single-character table for them."""
+    d = {}
+    for k in phrases:
+        if len(k) > d.get(k[0], 1): d[k[0]] = len(k)
+    return d
+
+def _maxmatch(text, phrases, starts, chars):
     out = []; i = 0; n = len(text)
     while i < n:
-        for L in range(min(maxlen, n - i), 1, -1):
+        for L in range(min(starts.get(text[i], 1), n - i), 1, -1):
             v = phrases.get(text[i:i + L])
             if v is not None: out.append(v); i += L; break
         else:

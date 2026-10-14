@@ -1,5 +1,5 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>四維八德（試用版）</title><link rel="icon" href="logo.png">
-<style>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>四維八德（開源版）</title><link rel="icon" href="logo.png">
+<link rel="stylesheet" href="pdf.css"><style>
 :root{
  --blue:#007AFF;--green:#34C759;--red:#FF3B30;--orange:#FF9500;--pink:#FF2D55;--purple:#AF52DE;--indigo:#5856D6;--teal:#30B0C7;--cyan:#32ADE6;--gray:#8E8E93;--brown:#A2845E;
  --bg:#F5F5F7;--side:#ECECF0;--card:#FFFFFF;--fill:rgba(118,118,128,.12);--fill2:rgba(118,118,128,.08);
@@ -186,6 +186,11 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
  <div class="bar"><h1 id="ptitle">轉檔</h1><span class="sub" id="psub"></span><div class="tools"><button class="btn plain" id="fmtbtn">支援格式</button></div></div>
  <div style="min-height:0;display:grid">
 
+<section class="page scroll" id="p-pdfhub"><div class="col" style="max-width:1180px">
+ <div class="pdf-intro"><b>文件留在這台電腦</b><br>整理、轉換、編輯、OCR、簽名與文字模型都在本機處理。完整離線版附帶引擎與模型；PDF 轉 Word／Excel 的版面與辨識結果請檢查。</div>
+ <div class="pdf-status" id="pdf_status"></div><div class="pdf-head-actions"><input id="pdf_search" type="search" placeholder="搜尋 PDF 功能" aria-label="搜尋 PDF 功能"><button class="btn tint" id="pdf_scan_source">從掃描器取得圖片</button><button class="btn tint" id="pdf_paste_html">貼上 HTML</button><button class="btn plain" id="pdf_alltools">所有 PDF 工具</button></div>
+ <div id="pdf_catalog"></div><p class="gfoot">本機手寫簽名與憑證簽章是不同工具。離線簽章沒有線上時間戳或撤銷查詢；永久遮蔽請檢查所有頁面與文件副本。</p>
+ </div></section>
  <section class="page scroll" id="p-workflow"><div class="col" style="max-width:1000px">
   <div class="flow-note">選擇交付用途，一次處理素材、產生不同版本並檢查成品。原檔會保留，結果附有交付報告。</div>
   <div class="flow-grid"><div>
@@ -207,8 +212,8 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
    </div>
    <details id="wf_video_options"><summary>影片規格、字幕與檢查</summary><div class="group"><div class="row"><label class="lab" for="wf_video_size">分享版本尺寸<small>原比例版本保留原始尺寸</small></label><span class="val"><select id="wf_video_size" style="width:160px"><option value="480">480 · 省資源</option><option value="720" selected>720 · 均衡</option><option value="1080">1080 · 高解析度</option></select></span></div>
     <div class="row"><span class="lab">字幕檔<small id="wf_sub_label">選填 · 可燒入所有影片版本</small></span><button class="btn tint" id="wf_sub">選擇</button><button class="btn plain" id="wf_sub_clear">清除</button></div>
-    <div class="row"><label class="lab" for="wf_autosub">AI 自動字幕<small>初次使用可能需要下載模型</small></label><input id="wf_autosub" type="checkbox"></div>
-    <div class="row"><label class="lab" for="wf_model">辨識模型</label><span class="val"><select id="wf_model" style="width:160px"><option value="base">快速</option><option value="small">準確</option><option value="medium">最準</option></select></span></div>
+    <div class="row"><label class="lab" for="wf_autosub">AI 自動字幕<small>已內建離線辨識模型</small></label><input id="wf_autosub" type="checkbox"></div>
+    <div class="row"><label class="lab" for="wf_model">辨識模型</label><span class="val"><select id="wf_model" style="width:160px"><option value="base">快速</option></select></span></div>
    </div></details>
    <details><summary>打包與檢查</summary><div class="group">
     <div class="row"><label class="lab" for="wf_zip">另產生 ZIP 交付檔案</label><input id="wf_zip" type="checkbox" checked></div>
@@ -223,23 +228,20 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
  <section class="page scroll" id="p-system"><div class="col" style="max-width:900px">
   <div class="flow-note">查看電腦規格，做短時間功能測試，或先預覽再清理暫存。測試會短暫使用處理器，並在測試資料夾寫入 16 MB 後刪除測試檔。</div>
   <div><div class="ghead">電腦硬體<span class="r"><button class="btn plain" id="sys_refresh">重新讀取</button></span></div><div class="group" id="sys_info"><div class="empty">正在讀取硬體資訊…</div></div></div>
-  <div><button class="btn pri" id="sys_test">開始硬體短測</button><div class="gfoot">CPU、16 MB 記憶體一致性、磁碟讀寫、GPU／CPU 影音編碼。結果會出現在下方佇列，可開啟報告。短測不等於完整硬碟健康、溫度或整部記憶體檢查。</div></div>
+  <div><button class="btn pri" id="sys_test">開始硬體短測</button><div class="gfoot">CPU、16 MB 記憶體一致性、磁碟讀寫、GPU／CPU 影音編碼。結果會顯示在這裡，也會存成文字報告。短測不等於完整硬碟健康、溫度或整部記憶體檢查。</div><div class="group" id="sys_result" style="display:none;margin-top:10px"></div></div>
   <div><div class="ghead">清理範圍</div><div class="group" id="sys_categories"></div><div class="gfoot">保留文件、照片、下載成品、設定與已完成 AI 模型。清理時跳過已變動或正在使用的檔案；不清理登錄檔。</div></div>
   <div><button class="btn tint" id="sys_scan">掃描可清理項目</button><div class="group" id="sys_preview" style="margin-top:12px"><div class="empty">先掃描，確認項目與空間後再清理</div></div><button class="btn danger" id="sys_clean" disabled style="margin-top:10px">清理掃描項目</button></div>
  </div></section>
 
  <section class="page scroll" id="p-disk"><div class="col">
-  <div class="flow-note">檔案救援請先停止在來源磁碟寫入新資料。檔案系統修復會修改磁碟，請先備份或救援重要資料；實體故障無法靠這些工具保證修好。</div>
+  <div class="flow-note">使用 Windows 內建的磁碟檢查工具。檔案系統修復會修改磁碟，請先備份重要資料；實體故障無法靠這些工具保證修好。</div>
   <div><div class="ghead">磁碟操作<span class="r"><button class="btn plain" id="disk_refresh">重新讀取</button></span></div><div class="group">
-   <div class="row"><label class="lab" for="disk_mode">用途</label><span class="val"><select id="disk_mode"><option value="check">檢查檔案系統（不修復）</option><option value="repair">修復檔案系統</option><option value="recovery">救援刪除／遺失檔案</option></select></span></div>
-   <div class="row"><label class="lab" for="disk_source">來源磁碟</label><span class="val"><select id="disk_source"></select></span></div>
-   <div class="row disk-recovery"><label class="lab" for="disk_dest">恢復資料存到</label><span class="val"><select id="disk_dest"></select></span></div>
-   <div class="row disk-recovery"><label class="lab" for="disk_recovery_mode">救援方式</label><span class="val"><select id="disk_recovery_mode"><option value="regular">一般 · 最近刪除的 NTFS 檔案</option><option value="extensive">深入 · 格式化、較早刪除、其他格式</option></select></span></div>
-   <div class="row disk-recovery"><label class="lab" for="disk_group">檔案類型</label><span class="val"><select id="disk_group"><option value="documents">文件</option><option value="photos">照片</option><option value="video">影片</option><option value="all">所有類型</option></select></span></div>
+   <div class="row"><label class="lab" for="disk_mode">用途</label><span class="val"><select id="disk_mode"><option value="check">檢查檔案系統（不修復）</option><option value="repair">修復檔案系統</option></select></span></div>
+   <div class="row"><label class="lab" for="disk_source">磁碟</label><span class="val"><select id="disk_source"></select></span></div>
   </div><div class="gfoot" id="disk_dependency"></div></div>
   <div class="flow-actions"><button class="btn tint" id="disk_preview_btn">預覽這次操作</button><button class="btn plain" id="disk_help_btn">Microsoft 官方說明</button></div>
   <div class="group" id="disk_plan"><div class="empty">選擇磁碟與用途，預覽操作後再開始</div></div>
-  <div class="group"><div class="row"><label class="lab" for="disk_ack">我已確認來源、目的地及備份安排<small>修復會修改磁碟；救援結果會寫入另一磁碟</small></label><input id="disk_ack" type="checkbox"></div></div>
+  <div class="group"><div class="row"><label class="lab" for="disk_ack">我已確認磁碟及備份安排<small>修復會修改磁碟</small></label><input id="disk_ack" type="checkbox"></div></div>
   <button class="btn pri lg" id="disk_launch" disabled>確認後開啟 Windows 工具</button>
   <div class="gfoot">會另外開啟需要系統管理員權限的 Windows 工具視窗。來源磁碟不會自動格式化，不使用強制卸載或全磁碟壞軌掃描。修復若需重新啟動，會由 Windows 工具詢問，不會自動重新啟動電腦。</div>
  </div></section>
@@ -322,16 +324,25 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
 <div style="display:flex;gap:10px;align-items:center;margin-top:14px"><input type="range" id="stime" min="0" max="1000" value="300" style="flex:1"><span class="mute small" id="stimel" style="min-width:70px"></span>
 <button class="btn" id="rcancel">取消</button><button class="btn pri" id="rok">完成</button></div></div></div>
 <div class="modal" id="amodal"><div class="sheet about"><img src="logo.png" alt=""><h2>四維八德</h2><div class="mute small" id="aver"></div><p id="specnote" class="small">Windows 10／11 64 位元 · 依記憶體調整工作數。建議至少 4 GB RAM；4K 與大型 AI 模型建議 8–16 GB。</p>
-<div class="ed" id="aed">試用版</div>
+<div class="ed" id="aed">開源版</div>
 <p id="awel" style="display:none;color:var(--tx);font-weight:600">歡迎使用！</p>
-<p>這是<b>試用版</b>，但<b>完全免費</b>、<b>沒有使用期限</b>，<br>所有功能都能使用，也不會跳出付費提醒。</p>
-<p class="small">所有轉檔都在你的電腦上完成，檔案不會上傳到任何地方。</p><p class="small">© 2026 Wel Wang．保留一切權利</p>
-<div class="links"><button class="btn plain" data-doc="guide">使用說明</button><button class="btn plain" data-doc="eula">使用授權條款</button><button class="btn plain" data-doc="license">第三方元件聲明</button><button class="btn plain" data-doc="log">記錄檔</button></div>
+<p>這是<b>開源版</b>，<b>完全免費</b>、<b>沒有使用期限</b>，<br>所有功能都能使用，也不會跳出付費提醒。</p>
+<p class="small">所有轉檔都在你的電腦上完成，檔案不會上傳到任何地方。</p><p class="small">© 2026 Wel Wang．GPLv3／AGPLv3 開源授權</p>
+<div class="links"><button class="btn plain" data-doc="guide">使用說明</button><button class="btn plain" data-doc="tests">測試結果</button><button class="btn plain" data-doc="eula">使用授權條款</button><button class="btn plain" data-doc="license">第三方元件聲明</button><button class="btn plain" data-doc="log">記錄檔</button></div>
 <button class="btn pri lg" id="aok" style="margin-top:16px">開始使用</button></div></div>
 <div class="toast" id="toast"></div>
 <div class="dropov" id="dropov"><div class="box"><svg class="i" data-i="download"></svg><b id="dropt">放開以加入檔案</b><span id="drops"></span></div></div>
 <div class="modal" id="comparemodal" role="dialog" aria-modal="true" aria-labelledby="comparetitle"><div class="sheet"><h3 id="comparetitle">轉檔前後預覽<span class="r"><button class="btn plain" id="compareclose">完成</button></span></h3><div class="compare-grid"><figure><figcaption>原始素材</figcaption><img id="comparebefore" alt="原始素材預覽"><small id="comparebeforeinfo"></small></figure><figure><figcaption>輸出成品</figcaption><img id="compareafter" alt="輸出成品預覽"><small id="compareafterinfo"></small></figure></div><p class="gfoot" id="comparecheck"></p><p class="gfoot">影片顯示各自約 30% 時間位置的畫面；預覽供人工檢查，不代表全片品質評分。</p></div></div>
-<div class="modal" id="cleanmodal" role="dialog" aria-modal="true" aria-labelledby="cleantitle"><div class="sheet" style="max-width:500px"><h3 id="cleantitle">確認清理暫存</h3><p id="cleanreview"></p><p class="mute">此操作會刪除掃描到的暫存檔，無法透過復原按鈕還原。你可以取消並調整清理範圍。</p><div class="flow-actions"><button class="btn tint" id="clean_cancel">取消</button><button class="btn danger" id="clean_confirm">確認清理</button></div></div></div><script>
+<div class="modal" id="cleanmodal" role="dialog" aria-modal="true" aria-labelledby="cleantitle"><div class="sheet" style="max-width:500px"><h3 id="cleantitle">確認清理暫存</h3><p id="cleanreview"></p><p class="mute">此操作會刪除掃描到的暫存檔，無法透過復原按鈕還原。你可以取消並調整清理範圍。</p><div class="flow-actions"><button class="btn tint" id="clean_cancel">取消</button><button class="btn danger" id="clean_confirm">確認清理</button></div></div></div>
+<div class="modal" id="pdf_editor" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="pdf_editor_title"><div class="sheet pdf-editor">
+ <h3 id="pdf_editor_title">PDF 頁面工作台</h3><div class="pdf-toolbar"><select id="pdf_kind" aria-label="編輯工具"></select><input type="text" id="pdf_edittext" placeholder="文字／欄位名稱" aria-label="文字或欄位名稱"><input type="text" id="pdf_choices" placeholder="選項，以逗號分隔" style="display:none" aria-label="選項"><label>字級 <input type="number" id="pdf_textsize" min="6" max="72" value="12" style="width:60px"></label><label>筆寬 <input type="number" id="pdf_penwidth" min="0.1" max="20" step="0.5" value="1.5" style="width:60px"></label><input type="color" id="pdf_ink" value="#111111" aria-label="顏色"><button class="btn tint" id="pdf_addaction" disabled>加入項目</button><button class="btn plain" id="pdf_undo" disabled>復原上一步</button></div>
+ <p class="pdf-tip" id="pdf_editor_tip"></p><div class="pdf-navigation"><button class="btn plain" id="pdf_prev">上一頁</button><label>第 <input id="pdf_page" type="number" min="1" value="1" aria-label="頁碼"> 頁</label><span id="pdf_count"></span><button class="btn plain" id="pdf_next">下一頁</button></div>
+ <div class="pdf-editor-body" id="pdf_editor_body"><div class="pdf-view"><div class="pdf-paper" id="pdf_paper"><img id="pdf_pageimage" alt="PDF 頁面預覽"><svg id="pdf_overlay" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="拖拉框選或直接手繪"></svg></div></div><aside class="pdf-right"><div id="pdf_existing"></div><div class="ghead">待套用項目 <small id="pdf_action_count"></small></div><div id="pdf_actions"></div></aside></div>
+ <div class="pdf-editor-foot"><span class="pdf-operation-note">預覽中的項目尚未寫入文件；套用後按「開始」產生新檔，原檔保留。</span><div class="flow-actions"><button class="btn plain" id="pdf_editor_close">取消</button><button class="btn tint" id="pdf_editor_apply">套用項目</button></div></div>
+ </div></div>
+<div class="modal" id="pdf_html_modal" role="dialog" aria-modal="true"><div class="sheet"><h3>貼上本機 HTML</h3><textarea id="pdf_html_text" class="pdf-paste" aria-label="HTML 內容" placeholder="貼上 HTML 文字；圖片與樣式請使用本機檔案"></textarea><p class="gfoot">包含網路資源的 HTML 會要求你先儲存資源，確保離線處理。</p><div class="flow-actions"><button class="btn plain" id="pdf_html_cancel">取消</button><button class="btn tint" id="pdf_html_add">加入轉換</button></div></div></div>
+<div class="modal" id="pdf_notes_modal" role="dialog" aria-modal="true"><div class="sheet"><h3>成品說明</h3><ul id="pdf_result_notes" class="pdf-result-list"></ul><button class="btn tint" id="pdf_notes_close">完成</button></div></div>
+<script>
 /* ---------- icons (24px line set) ---------- */
 const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',plus:'<path d="M12 5v14M5 12h14"/>',x:'<path d="M18 6 6 18M6 6l12 12"/>',
 chev:'<path d="m9 6 6 6-6 6"/>',chevdown:'<path d="m6 9 6 6 6-6"/>',up:'<path d="m6 15 6-6 6 6"/>',down:'<path d="m6 9 6 6 6-6"/>',
@@ -371,8 +382,8 @@ table:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h1
 cc:'<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10 10.2a2.5 2.5 0 1 0 0 3.6M17 10.2a2.5 2.5 0 1 0 0 3.6"/>',show:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m10 12 4 0M12 10l2 2-2 2"/>'};
 const svg=(k,cls='i')=>`<svg class="${cls}" viewBox="0 0 24 24">${IC[k]||IC.doc}</svg>`;
 document.querySelectorAll('svg[data-i]').forEach(s=>{s.setAttribute('viewBox','0 0 24 24');s.innerHTML=IC[s.dataset.i]});
-const GC={disk:'var(--brown)',system:'var(--gray)',workflow:'var(--teal)',convert:'var(--blue)',video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',other:'var(--teal)',disc:'var(--brown)',rec:'var(--red)',dl:'var(--cyan)',auto:'var(--gray)'};
-const GI={disk:'disc',system:'sliders',workflow:'folder',convert:'convert',video:'video',audio:'audio',image:'image',pdf:'pdf',other:'shield',disc:'disc',rec:'record',dl:'download',auto:'bolt'};
+const GC={pdfhub:'var(--red)',disk:'var(--brown)',system:'var(--gray)',workflow:'var(--teal)',convert:'var(--blue)',video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',other:'var(--teal)',disc:'var(--brown)',rec:'var(--red)',dl:'var(--cyan)',auto:'var(--gray)'};
+const GI={pdfhub:'pdf',disk:'disc',system:'sliders',workflow:'folder',convert:'convert',video:'video',audio:'audio',image:'image',pdf:'pdf',other:'shield',disc:'disc',rec:'record',dl:'download',auto:'bolt'};
 const tile=(icon,color,size='')=>`<span class="tile ${size}" style="background:${color}">${svg(icon)}</span>`;
 /* ---------- state ---------- */
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let PC={},S={},files=[],API,TS=null,tool=null,tfiles=[],TV={},group='video';
@@ -384,7 +395,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmtSize=b=>b>1<<30?(b/(1<<30)).toFixed(1)+' GB':b>1<<20?(b/(1<<20)).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
 const fmtDur=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`};
 const MI={};async function loadInfo(list,cb){const need=list.filter(f=>(f.cat=='video'||f.cat=='audio')&&!(f.path in MI)).map(f=>f.path);if(!need.length||!API)return;need.forEach(p=>MI[p]=null);
- try{for(let i=0;i<need.length;i+=60){const r=await API.media_info(need.slice(i,i+60));Object.assign(MI,r);cb()}}catch(e){need.filter(p=>MI[p]===null).forEach(p=>delete MI[p]);toast('部分媒體資訊無法讀取',1)}}
+ try{for(let i=0,k=16;i<need.length;i+=k,k=60){const r=await API.media_info(need.slice(i,i+k));Object.assign(MI,r);cb()}}catch(e){need.filter(p=>MI[p]===null).forEach(p=>delete MI[p]);toast('部分媒體資訊無法讀取',1)}}
 const miText=p=>{const m=MI[p];if(!m)return'';const q=m.h?(m.h>=2160?'4K':m.h>=1440?'1440p':m.h>=1080?'1080p':m.h>=720?'720p':m.h+'p'):'';return [q,m.dur?fmtDur(m.dur):'',m.hdr?'HDR':''].filter(Boolean).join(' · ')};
 const fmtT=s=>s==null?'':s<60?s+' 秒':s<3600?Math.floor(s/60)+' 分 '+(s%60)+' 秒':Math.floor(s/3600)+' 小時 '+Math.floor(s%3600/60)+' 分';
 function toast(m,err,act){const t=$('#toast');t.innerHTML=esc(m)+(act?`<button class="btn tint">${esc(act[0])}</button>`:'');t.className='toast on'+(err?' err':'')+(act?' act':'');if(act)t.querySelector('button').onclick=()=>{t.className='toast';act[1]()};clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',act?7000:err?5000:2400)}
@@ -396,17 +407,17 @@ function theme(){const t=S.theme||'auto';document.body.classList.toggle('dark',t
 mq.addEventListener('change',theme);$('#theme').onclick=e=>{const v=e.target.dataset.v;if(v){S.theme=v;theme();save()}};
 const sw=(id,on)=>$('#'+id).classList.toggle('on',!!on),isOn=id=>$('#'+id).classList.contains('on');
 /* ---------- navigation ---------- */
-const PAGES={disk:['磁碟檢查與救援','預覽操作後交由 Windows 工具執行'],system:['電腦工具','硬體資訊、短測與暫存清理'],workflow:['交付工作台','選用途，拿到可交付的成品包'],convert:['轉檔','把任何檔案轉成需要的格式'],rec:['螢幕錄影','錄下整個螢幕或指定範圍'],dl:['下載影片','從網站下載影片或音樂'],auto:['自動化','監控資料夾與完成後動作']};
-function navHTML(){if(!TS)return'';const it=(k,name,extra='')=>`<div class="nav ${S.tab==k?'on':''}" data-k="${k}" title="${name}">${tile(GI[k],GC[k])}<span>${name}</span>${extra}</div>`;
+const PAGES={pdfhub:['PDF 工作台','完整本機工具 · 文件不送到雲端'],disk:['磁碟檢查與修復','預覽操作後交由 Windows 內建工具執行'],system:['電腦工具','硬體資訊、短測與暫存清理'],workflow:['交付工作台','選用途，拿到可交付的成品包'],convert:['轉檔','把任何檔案轉成需要的格式'],rec:['螢幕錄影','錄下整個螢幕或指定範圍'],dl:['下載影片','從網站下載影片或音樂'],auto:['自動化','監控資料夾與完成後動作']};
+function navHTML(){if(!TS)return'';const it=(k,name,extra='')=>`<div class="nav ${S.tab==k||(k=='pdfhub'&&S.tab=='pdf')?'on':''}" data-k="${k}" title="${name}">${tile(GI[k],GC[k])}<span>${name}</span>${extra}</div>`;
  const cnt=g=>TS.tools.filter(t=>t.group==g).length;
- return it('workflow','交付工作台')+it('convert','一般轉檔')+'<div class="sb-label">工具</div>'+TS.groups.map(([g,n])=>it(g,n.replace('工具',''),`<span class="cnt">${cnt(g)}</span>`)).join('')
-  +'<div class="sb-label">更多</div>'+it('rec','螢幕錄影','<i class="live" id="recdot"></i>')+it('dl','下載影片')+it('auto','自動化')+it('system','電腦工具')+it('disk','磁碟檢查與救援')}
+ return it('workflow','交付工作台')+it('convert','一般轉檔')+'<div class="sb-label">工具</div>'+TS.groups.map(([g,n])=>it(g=='pdf'?'pdfhub':g,g=='pdf'?'PDF 工作台':n.replace('工具',''),`<span class="cnt">${cnt(g)}</span>`)).join('')
+  +'<div class="sb-label">更多</div>'+it('rec','螢幕錄影','<i class="live" id="recdot"></i>')+it('dl','下載影片')+it('auto','自動化')+it('system','電腦工具')+it('disk','磁碟檢查與修復')}
 function renderNav(){$('#nav').innerHTML=navHTML();recUI()}
 $('#nav').onclick=e=>{const n=e.target.closest('.nav');if(n){$('#gsearch').value='';go(n.dataset.k)}};
 function go(k){S.tab=k;const isTool=TS.groups.some(g=>g[0]==k)||k=='search';$$('.page').forEach(p=>p.classList.remove('on'));
  if(isTool){group=k;$('#p-tools').classList.add('on');const gn=k=='search'?['搜尋結果','']:TS.groups.find(g=>g[0]==k);$('#ptitle').textContent=k=='search'?'搜尋結果':gn[1];$('#psub').textContent=k=='search'?'':`${TS.tools.filter(t=>t.group==k).length} 個工具`;renderTList();
   const want=(S.tool_by_group||{})[k];const list=visibleTools();pickTool(list.some(t=>t.id==want)?want:(list[0]||{}).id)}
- else{$('#p-'+k).classList.add('on');$('#ptitle').textContent=PAGES[k][0];$('#psub').textContent=PAGES[k][1];if(k=='rec')recInit();if(k=='auto')autoInit();if(k=='system')systemInit();if(k=='disk')diskInit()}
+ else{$('#p-'+k).classList.add('on');$('#ptitle').textContent=PAGES[k][0];$('#psub').textContent=PAGES[k][1];if(k=='rec')recInit();if(k=='auto')autoInit();if(k=='system')systemInit();if(k=='disk')diskInit();if(k=='pdfhub')PDFUI.init()}
  renderNav();if(k!='search')save()}
 $('#gsearch').oninput=e=>{const q=e.target.value.trim();if(q){S.tab='search';go('search')}else go(group=='search'?'video':group)};
 function visibleTools(){const q=$('#gsearch').value.trim().toLowerCase();return group=='search'?TS.tools.filter(t=>(t.name+t.desc).toLowerCase().includes(q)):TS.tools.filter(t=>t.group==group)}
@@ -442,15 +453,15 @@ function outUI(){setSeg('#outmode',S.out_mode);$('#outdir').innerHTML=S.out_mode
 $('#go').onclick=async()=>{const opt={preset:S.preset,target_mb:$('#tmb').value,trim_start:$('#ts').value,trim_end:$('#te').value,height:$('#h').value,hwaccel:S.hwaccel,fastcopy:S.fastcopy,loudnorm:S.loudnorm,out_dir:S.out_mode=='custom'?S.out_dir:'',codec:S.codec||'auto',verify_full:!!S.verify_full,resource_mode:S.resource_mode||'auto'};
  const items=files.filter(f=>f.target&&f.targets.length).map(f=>({path:f.path,target:f.target}));await call('start',items,opt,isOn('merge'));toast(`已加入 ${items.length} 個工作`);files=[];render();poll()};
 /* ---------- activity ---------- */
-$('#queue').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.preview)waiting(b,async()=>{const r=await call('compare_job',b.dataset.preview);$('#comparebefore').src=r.before.src;$('#compareafter').src=r.after.src;$('#comparebeforeinfo').textContent=r.before.w+' × '+r.before.h;$('#compareafterinfo').textContent=r.after.w+' × '+r.after.h;$('#comparecheck').textContent=r.validation;$('#comparemodal').classList.add('on');$('#compareclose').focus()});if(b.dataset.c)call('cancel',b.dataset.c).catch(()=>{});if(b.dataset.o)API.reveal(b.dataset.o);if(b.dataset.f)API.open_file(b.dataset.f);
+$('#queue').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.preview)waiting(b,async()=>{const r=await call('compare_job',b.dataset.preview);$('#comparebefore').src=r.before.src;$('#compareafter').src=r.after.src;$('#comparebeforeinfo').textContent=r.before.w+' × '+r.before.h;$('#compareafterinfo').textContent=r.after.w+' × '+r.after.h;$('#comparecheck').textContent=r.validation;$('#comparemodal').classList.add('on');$('#compareclose').focus()});if(b.dataset.c)call('cancel',b.dataset.c).catch(()=>{});if(b.dataset.o)waiting(b,()=>call('reveal',b.dataset.o));if(b.dataset.f)waiting(b,()=>call('open_file',b.dataset.f));if(b.dataset.notes)PDFUI.notes(JSON.parse(b.dataset.notes));
  if(b.dataset.rt){await call('retry',b.dataset.rt);lastQ='';poll()}};
-$('#queue').ondblclick=e=>{const b=e.target.closest('.q');const f=b&&b.querySelector('[data-f]');if(f)API.open_file(f.dataset.f)};
+$('#queue').ondblclick=e=>{const b=e.target.closest('.q');const f=b&&b.querySelector('[data-f]');if(f)call('open_file',f.dataset.f).catch(()=>{})};
 function sizeDelta(j){if(!j.out_size||!j.in_size||j.kind=='rec'||j.kind=='dl')return j.out_size&&j.kind?fmtSize(j.out_size)+'　':'';const d=(j.out_size-j.in_size)/j.in_size;
  return `${fmtSize(j.in_size)} → ${fmtSize(j.out_size)}${Math.abs(d)>=0.01?`（<span class="${d<0?'save':''}">${d<0?'−':'+'}${Math.abs(d*100).toFixed(0)}%</span>）`:''}　`}
 $('#openlog').onclick=()=>API.open_log();
 function about(welcome){$('#awel').style.display=welcome?'':'none';$('#aok').textContent=welcome?'開始使用':'完成';$('#amodal').classList.add('on')}
 $('#sbhead').onclick=()=>about(false);$('#aok').onclick=()=>{$('#amodal').classList.remove('on');if(!S.welcomed){S.welcomed=true;save()}};
-$('#amodal .links').onclick=e=>{const d=e.target.dataset.doc;if(!d)return;if(d=='log')API.open_log();else API.open_doc(d)};
+$('#amodal .links').onclick=e=>{const d=e.target.dataset.doc;if(!d)return;if(d=='log')call('open_log');else call('open_doc',d)};
 $('#cancelall').onclick=()=>API.cancel_all();$('#cleardone').onclick=async()=>{await API.clear_done();lastQ='';poll()};
 $('#amin').onclick=()=>{$('#activity').classList.toggle('min');S.qmin=$('#activity').classList.contains('min');$('#amin').style.transform=S.qmin?'rotate(180deg)':'';save()};
 $('#finsel').onchange=e=>{S.finish=e.target.value;setSeg('#finish',S.finish);save();if(S.finish=='shutdown')toast('全部完成後會倒數 2 分鐘關機')};
@@ -458,8 +469,9 @@ $('#finish').onclick=e=>{const v=e.target.dataset.v;if(v){S.finish=v;setSeg('#fi
 $('#noshut').onclick=async()=>{await API.cancel_shutdown();toast('已取消關機')};
 const SN={partial:'部分完成',queued:'等待中',running:'處理中',done:'完成',error:'失敗',cancelled:'已取消'};
 const KC=j=>j.kind=='hardware_test'?['sliders','var(--gray)']:j.kind=='workflow'?['folder','var(--teal)']:j.kind=='rec'?['record','var(--red)']:j.kind=='dl'?['download','var(--cyan)']:j.kind?[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).icon||'sliders',GC[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).group]||'var(--gray)']:['convert','var(--blue)'];
-let lastQ='',busy=false,recState={},seen={},wasBusy=false;
-let polling=false;async function poll(){if(polling||!API)return;polling=true;try{const r=await API.status();if(r.finish){S.finish=r.finish;setSeg('#finish',S.finish)}const js=r.jobs;recState=r.rec||{};busy=js.some(j=>j.state=='queued'||j.state=='running');recUI();$('#noshut').style.display=r.shutdown?'':'none';
+let lastQ='',busy=false,recState={},seen={},wasBusy=false,shownHw='';
+$('#sys_result').onclick=e=>{const b=e.target.closest('[data-hwopen]');if(b)waiting(b,()=>call('open_file',b.dataset.hwopen))};
+let polling=false;async function poll(){if(polling||!API)return;polling=true;try{const r=await API.status();if(r.finish){S.finish=r.finish;setSeg('#finish',S.finish)}const js=r.jobs;recState=r.rec||{};busy=r.busy??js.some(j=>j.state=='queued'||j.state=='running');recUI();$('#noshut').style.display=r.shutdown?'':'none';
  if(S.finish!==undefined&&$('#finsel').value!=S.finish)$('#finsel').value=S.finish;
  if(busy&&!wasBusy&&$('#activity').classList.contains('min'))$('#amin').click();
  if(wasBusy&&!busy){const all=js.filter(j=>j.finished&&Date.now()/1000-j.finished<120);const ok=all.filter(j=>j.state=='done'),bad=all.filter(j=>j.state=='error'||j.state=='partial');
@@ -467,7 +479,9 @@ let polling=false;async function poll(){if(polling||!API)return;polling=true;try
   else if(ok.length){const saved=ok.reduce((a,j)=>a+(j.in_size&&j.out_size&&!j.kind?Math.max(0,j.in_size-j.out_size):0),0);const last=ok[ok.length-1];
    toast(`全部完成（${ok.length} 個）${saved>1<<20?'，省下 '+fmtSize(saved):''}`,0,last.output?['顯示位置',()=>API.reveal(last.output)]:null)}}
  wasBusy=busy;
- const key=JSON.stringify(js);if(key==lastQ)return;lastQ=key;const act=js.filter(j=>j.state=='queued'||j.state=='running').length;
+ const hw=[...js].reverse().find(j=>j.kind=='hardware_test'&&(j.state=='done'||j.state=='partial'));
+ if(hw&&hw.id!=shownHw){shownHw=hw.id;const box=$('#sys_result');box.style.display='';box.innerHTML=`<div class="row"><b class="lab">${esc(hw.validation||'硬體短測完成')}</b><button class="btn plain" data-hwopen="${esc(hw.output)}">開啟報告</button></div>`+(hw.notes||[]).filter(l=>!/^【|^說明/.test(l)).map(l=>`<div class="row"><span class="lab" style="white-space:normal">${esc(l)}</span></div>`).join('')}
+ const key=JSON.stringify(js);if(key==lastQ)return;lastQ=key;const act=r.active??js.filter(j=>j.state=='queued'||j.state=='running').length;
  $('#qcount').textContent=act?`${act} 個進行中`:js.length?(js.some(j=>j.state=='error'||j.state=='partial')?'有工作需要檢查':'全部完成'):'';
  $('#queue').innerHTML=js.length?js.slice(-100).reverse().map(j=>{const rec=j.kind=='rec'&&j.state=='running';const [ic,col]=KC(j);
   const title=j.kind=='dl'?esc(j.label.replace(/^下載：/,'')||j.name):j.kind=='rec'?'螢幕錄影':`${esc(j.name)}<span class="mute"> → ${esc(j.label||TL(j.target))}</span>`;
@@ -475,11 +489,13 @@ let polling=false;async function poll(){if(polling||!API)return;polling=true;try
    :(j.state=='done'||j.state=='partial')?`<span class="${j.state=='partial'?'warn':'ok'}">${j.state=='partial'?'部分完成':'完成'}</span>　${sizeDelta(j)}${fmtT(Math.round(j.elapsed))||'不到 1 秒'}${j.validation?'　'+esc(j.validation):''}${j.state=='partial'?'　'+esc(j.msg):''}${j.encoder?'　'+esc(j.encoder):''}`:j.state=='error'?`<span class="err">${esc(j.msg)}</span>`:j.state=='queued'&&j.msg?esc(j.msg):SN[j.state];
   return `<div class="q ${j.state}">${tile(ic,col,'md')}<div style="min-width:0"><div class="nm t" title="${esc(j.output||j.name)}">${title}</div><div class="s" title="${esc(j.state=='error'?j.msg:j.encoder)}">${sub}</div>${j.state=='running'&&!rec||j.state=='queued'?`<div class="prog"><i style="width:${(j.progress*100).toFixed(1)}%"></i></div>`:''}</div>
   <div class="acts">${j.state=='queued'||j.state=='running'?`<button class="btn plain${rec?' danger':''}" data-c="${j.id}">${rec?'停止':'取消'}</button>`
-   :(j.state=='done'||j.state=='partial')&&j.output?`<button class="btn plain" data-f="${esc(j.output)}">開啟</button>${!j.kind&&/\.(mp4|mkv|webm|mov|avi|gif|jpg|jpeg|png|webp|avif|bmp|tiff)$/i.test(j.output)?`<button class="btn plain" data-preview="${j.id}">預覽</button>`:''}<button class="btn icon" data-o="${esc(j.output)}" title="在檔案總管中顯示">${svg('folder')}</button>`
+   :(j.state=='done'||j.state=='partial')&&j.output?`<button class="btn plain" data-f="${esc(j.output)}">開啟</button>${!j.kind&&/\.(mp4|mkv|webm|mov|avi|gif|jpg|jpeg|png|webp|avif|bmp|tiff)$/i.test(j.output)?`<button class="btn plain" data-preview="${j.id}">預覽</button>`:''}<button class="btn icon" data-o="${esc(j.output)}" title="在檔案總管中顯示">${svg('folder')}</button>${j.notes?.length?`<button class="btn plain" data-notes="${esc(JSON.stringify(j.notes))}">說明</button>`:''}`
    :(j.state=='error'||j.state=='cancelled')&&j.retry?`${j.output?`<button class="btn plain" data-o="${esc(j.output)}">檢查成品</button>`:''}<button class="btn plain" data-rt="${j.id}">重試</button>`:''}</div></div>`}).join(''):'<div class="empty" style="padding:14px">沒有工作</div>'}catch(e){toast('無法更新工作狀態，稍後會再試',1)}finally{polling=false}}
 let tick=0;setInterval(()=>{tick++;if(API&&(busy||recState.rec||tick%4==0))poll()},700);
 /* ---------- tools ---------- */
-const NEW=new Set(['v_social','v_fill','v_autosub','x_privacy','i_collage','v_frames','i_slideshow']);
+const NEW=new Set(['a_transcribe','a_meeting','v_social','v_autosub','x_privacy','i_collage','v_frames']);
+const SPEECH=new Set(['v_autosub','a_transcribe','a_meeting']);
+const speechMsg=()=>TS.whisper_ffmpeg===false?'目前的 FFmpeg 沒有語音辨識功能':'缺少離線語音辨識模型（tools\\models\\ggml-base.bin），請重新安裝完整版本';
 function renderTList(){const list=visibleTools();const col=g=>GC[g];
  $('#tlist').innerHTML=list.length?list.map(t=>`<div class="row ic click ${tool&&tool.id==t.id?'on':''}" data-t="${t.id}">${tile(t.icon,col(t.group),'md')}<span class="lab"><span style="display:flex;gap:6px;align-items:center">${esc(t.name)}${NEW.has(t.id)?'<span class="badge">新</span>':''}</span><small>${esc(t.desc)}</small></span><span class="chev">${svg('chev')}</span></div>`).join('')
  :'<div class="empty">找不到符合的工具</div>'}
@@ -506,7 +522,7 @@ async function renderTFiles(){const disc=tool.accept.includes('disc');
 $('#t_list').onclick=e=>{const b=e.target.closest('button');if(!b)return;const D=b.dataset;
  if(D.r!==undefined){tfiles.splice(+D.r,1)}else if(D.u!==undefined&&+D.u>0){const i=+D.u;[tfiles[i-1],tfiles[i]]=[tfiles[i],tfiles[i-1]]}else if(D.d!==undefined&&+D.d<tfiles.length-1){const i=+D.d;[tfiles[i+1],tfiles[i]]=[tfiles[i],tfiles[i+1]]}else return;renderTFiles()};
 function shown(f){if(!f.show)return true;return Object.entries(f.show).every(([k,v])=>Array.isArray(v)?v.includes(String(TV[k])):String(TV[k])==String(v))}
-function renderForm(){const fs=tool.fields.filter(shown);$('#t_optwrap').style.display=fs.length?'':'none';
+function renderForm(){const fs=tool.fields.filter(f=>shown(f)&&f.type!='json');$('#t_optwrap').style.display=fs.length?'':'none';
  $('#t_form').innerHTML=fs.map(f=>{const v=TV[f.k];let inp='';
   if(f.type=='check')return `<div class="row"><span class="lab">${esc(f.label)}</span><div class="sw ${v?'on':''}" data-k="${f.k}"></div></div>`;
   if(f.type=='select')inp=`<select data-k="${f.k}">${f.options.map(([a,b])=>`<option value="${esc(a)}" ${String(a)==String(v)?'selected':''}>${esc(b)}</option>`).join('')}</select>`;
@@ -514,31 +530,31 @@ function renderForm(){const fs=tool.fields.filter(shown);$('#t_optwrap').style.d
   else if(f.type=='color')inp=`<input type="color" data-k="${f.k}" value="${esc(v)}">`;
   else if(f.type=='file')inp=`<span class="fpick"><span class="nm" title="${esc(v)}">${v?esc(v.split(/[\\/]/).pop()):'未選擇'}</span><button class="btn tint" data-file="${f.k}">選擇…</button></span>`;
   else if(f.type=='rect')inp=`<span class="fpick"><span class="nm">${v?esc(v.split(',').slice(2).join(' × '))+' 像素':'尚未框選'}</span><button class="btn tint" data-rect="${f.k}">在畫面上框選</button></span>`;
-  else inp=`<input type="${f.k=='pw'?'password':'text'}" autocomplete="off" data-k="${f.k}" value="${esc(v)}" placeholder="${esc(f.placeholder||'')}">`;
+  else inp=`<input type="${f.k=='pw'||f.type=='password'?'password':'text'}" autocomplete="off" data-k="${f.k}" value="${esc(v)}" placeholder="${esc(f.placeholder||'')}">`;
   return `<div class="row"><span class="lab">${esc(f.label)}</span><span class="val">${inp}</span></div>`}).join('');
- let note='';if(tool.id=='v_autosub')note=TS.whisper?('完全離線辨識。「快速」模型會先檢查是否已下載；要更準確可選「準確」，第一次使用時下載一次即可。'+(PC.low?'<br><span class="warn">這台電腦效能較精簡，建議用「快速」，「最準」可能需要很久。</span>':'')):'<span class="warn">目前的 FFmpeg 沒有語音辨識功能。</span>';
+ let note='';if(SPEECH.has(tool.id))note=TS.whisper?('完全離線辨識，錄音不會上傳。'+(tool.id=='a_meeting'?'先轉成逐字稿，再整理出摘要、重點、決議與待辦事項；產出 Word、Markdown 與 SRT。'+(TS.ai?'':'<br><span class="warn">缺少離線文字模型，請選「快速摘錄」。</span>'):tool.id=='a_transcribe'?'長錄音會依停頓自動分段，並附上時間。':'')+(PC.low?'<br><span class="warn">這台電腦效能較精簡，1 小時錄音約需數十分鐘，建議先處理較短的片段。</span>':'')):'<span class="warn">'+speechMsg()+'。</span>';
  if(['i_watermark','v_wm_text'].includes(tool.id)&&!TS.font)note='<span class="warn">找不到中文字型。</span>';
  if(tool.id=='a_vocal')note='原理是消去左右聲道相同的聲音，對多數流行歌有效；現場錄音或單聲道效果有限。';
  if(tool.id=='v_stab')note='防手震需要先完整分析一次影片，時間約為一般轉檔的兩倍。';
  if(tool.id=='x_privacy')note='JPG、PNG 直接移除資訊、不重新壓縮；影片與音訊不重新編碼。';
- $('#t_note').innerHTML=note;updGo()}
-function updGo(){const b=$('#t_go');const n=tfiles.length;const disc=tool.accept.includes('disc');b.disabled=!n||(tool.together&&n<2&&!['i_slideshow','i_gif'].includes(tool.id))||(tool.id=='v_autosub'&&!TS.whisper);
+ $('#t_note').innerHTML=(PDFUI.edits.has(tool.id)?'<button class="btn tint" id="pdf_open_editor">在 PDF 頁面上編輯</button><p class="gfoot">'+(Array.isArray(TV.actions)?TV.actions.length+' 個項目已套用。':'加入 PDF 後可預覽、框選與編輯。')+'</p>':'')+note;if($('#pdf_open_editor'))$('#pdf_open_editor').onclick=()=>waiting($('#pdf_open_editor'),()=>PDFUI.open(tool.id));updGo()}
+function updGo(){const b=$('#t_go');const n=tfiles.length;const disc=tool.accept.includes('disc');b.disabled=!n||(tool.together&&n<(tool.min_files||(['i_slideshow','i_gif'].includes(tool.id)?1:2)))||(tool.max_files&&n!=tool.max_files)||(SPEECH.has(tool.id)&&!TS.whisper);
  b.textContent=disc?'開始':tool.together?(n>1?`合成 ${n} 個檔案`:'開始'):n>1?`處理 ${n} 個檔案`:'開始';
- const need=tool.together&&!['i_slideshow','i_gif'].includes(tool.id)?2:1;
- $('#t_gohint').innerHTML=tool.id=='v_autosub'&&!TS.whisper?'這個 FFmpeg 版本不支援語音辨識':!n?(disc?'先選擇光碟機或資料夾':`先加入${need>1?'至少 2 個':''}${tool.accept.map(a=>ACC[a]).join('或')}`):n<need?'至少需要 2 個檔案':'按 <kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始';loadInfo(tfiles,()=>renderTFiles())}
+ const need=tool.min_files||(tool.together&&!['i_slideshow','i_gif'].includes(tool.id)?2:1);
+ $('#t_gohint').innerHTML=SPEECH.has(tool.id)&&!TS.whisper?speechMsg():!n?(disc?'先選擇光碟機或資料夾':`先加入${need>1?'至少 2 個':''}${tool.accept.map(a=>ACC[a]).join('或')}`):n<need?'至少需要 2 個檔案':'按 <kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始';loadInfo(tfiles,()=>renderTFiles())}
 $('#t_form').addEventListener('change',e=>{const k=e.target.dataset.k;if(!k)return;TV[k]=e.target.value;if(tool.fields.some(f=>f.show&&k in f.show))renderForm()});
 $('#t_form').addEventListener('input',e=>{const k=e.target.dataset.k;if(k&&e.target.tagName!='SELECT')TV[k]=e.target.value});
 $('#t_form').addEventListener('click',async e=>{const t=e.target.closest('.sw,button');if(!t)return;
  if(t.classList.contains('sw')){t.classList.toggle('on');TV[t.dataset.k]=t.classList.contains('on');if(tool.fields.some(f=>f.show&&t.dataset.k in f.show))renderForm();return}
  if(t.dataset.file){const f=tool.fields.find(x=>x.k==t.dataset.file);const p=await call('pick_file',f.filter||'');if(p){TV[f.k]=p;renderForm()}}
  if(t.dataset.rect){if(!tfiles.length){toast('請先加入檔案',1);return}openRect(tfiles[0].path,t.dataset.rect)}});
-$('#t_go').onclick=async()=>{const fs=tool.fields.filter(shown);for(const f of fs){if(f.type=='file'&&!TV[f.k]&&!/選填/.test(f.label)){toast(`請先選擇「${f.label}」`,1);return}if(f.type=='rect'&&!TV[f.k]){toast('請先在畫面上框選範圍',1);return}}
- const p={};tool.fields.forEach(f=>{if(shown(f))p[f.k]=TV[f.k]});const ids=await call('run_tool',tool.id,tfiles.map(f=>f.path),p);S.tool_opts=S.tool_opts||{};S.tool_opts[tool.id]=Object.fromEntries(Object.entries(p).filter(([k])=>k!='rect'));
+$('#t_go').onclick=async()=>{const fs=tool.fields.filter(shown);for(const f of fs){if(f.type=='file'&&!TV[f.k]&&!/選填/.test(f.label)){toast(`請先選擇「${f.label}」`,1);return}if(f.type=='rect'&&!TV[f.k]&&!/選填/.test(f.label)){toast('請先在畫面上框選範圍',1);return}}
+ const p={};tool.fields.forEach(f=>{if(shown(f))p[f.k]=TV[f.k]});const ids=await call('run_tool',tool.id,tfiles.map(f=>f.path),p);S.tool_opts=S.tool_opts||{};S.tool_opts[tool.id]=Object.fromEntries(Object.entries(p).filter(([k])=>!['rect','actions','pw','pfx','pfx_pw'].includes(k)));
  toast(`已加入 ${ids.length} 個工作`);if(!tool.accept.includes('disc'))tfiles=[];renderTFiles();poll()};
 /* ---------- rectangle picker ---------- */
 let RP=null;
 async function openRect(path,key){$('#rmodal').classList.add('on');$('#sel').style.display='none';RP={path,key,r:null};await loadFrame(null)}
-async function loadFrame(t){const p=await call('preview',RP.path,t);RP.w=p.w;RP.h=p.h;RP.dur=p.dur;$('#simg').src=p.src;
+async function loadFrame(t){const p=/\.pdf$/i.test(RP.path)?await call('pdf_preview',RP.path,+TV.preview_page||1,TV.pw||''):await call('preview',RP.path,t);RP.w=p.w;RP.h=p.h;RP.dur=p.dur;$('#simg').src=p.src;
  $('#stime').style.visibility=p.dur?'visible':'hidden';$('#stimel').textContent=p.dur?fmtT(Math.round(t??p.dur*0.3)):'';$('#r_info').textContent=`原始尺寸 ${p.w} × ${p.h}`;
  const cur=TV[RP.key];if(cur&&!RP.r){const [x,y,w,h]=cur.split(',').map(Number);RP.r={x,y,w,h};setTimeout(drawSel,60)}}
 $('#stime').onchange=e=>loadFrame(RP.dur*e.target.value/1000);
@@ -635,23 +651,24 @@ $('#sys_clean').onclick=()=>{if(!cleanupPlan)return;$('#cleanreview').textConten
 
 /* ---------- disk tools ---------- */
 let diskLoaded=false,diskPlan=null,diskDevices=null;
-function diskMode(){const rec=$('#disk_mode').value=='recovery';$$('.disk-recovery').forEach(e=>e.style.display=rec?'':'none');diskPlan=null;$('#disk_ack').checked=false;$('#disk_launch').disabled=true;$('#disk_plan').innerHTML='<div class="empty">設定已更新，請重新預覽</div>';$('#disk_dependency').textContent=rec?(diskDevices?.recovery?'已偵測到 Microsoft Windows File Recovery':'需要 Microsoft Windows File Recovery；可由官方說明前往 Microsoft Store 安裝。'):'使用 Windows 內建磁碟檢查工具'}
-async function diskInit(){if(diskLoaded)return;diskLoaded=true;try{diskDevices=await call('disk_info');const opts=diskDevices.drives.map(d=>`<option value="${d.drive}">${d.drive} · ${esc(d.filesystem)} · 可用 ${fmtSize(d.free)}</option>`).join('');$('#disk_source').innerHTML='<option value="">選擇來源磁碟</option>'+opts;$('#disk_dest').innerHTML='<option value="">選擇另一磁碟／USB</option>'+opts;diskMode()}catch(e){diskLoaded=false}}
-$('#disk_refresh').onclick=()=>waiting($('#disk_refresh'),async()=>{diskLoaded=false;await diskInit()});['mode','source','dest','recovery_mode','group'].forEach(k=>$('#disk_'+k).onchange=diskMode);
-$('#disk_preview_btn').onclick=()=>waiting($('#disk_preview_btn'),async()=>{diskPlan=await call('disk_preview',$('#disk_mode').value,$('#disk_source').value,$('#disk_dest').value,$('#disk_group').value,$('#disk_recovery_mode').value);$('#disk_plan').innerHTML=`<div class="row"><b>${esc(diskPlan.description)}</b></div>`+diskPlan.warnings.map(w=>`<div class="row"><span class="lab" style="white-space:normal">${esc(w)}</span></div>`).join('');$('#disk_launch').disabled=!diskPlan.available||!$('#disk_ack').checked});
+function diskMode(){diskPlan=null;$('#disk_ack').checked=false;$('#disk_launch').disabled=true;$('#disk_plan').innerHTML='<div class="empty">設定已更新，請重新預覽</div>';$('#disk_dependency').textContent='使用 Windows 內建磁碟檢查工具（chkdsk）'}
+async function diskInit(){if(diskLoaded)return;diskLoaded=true;try{diskDevices=await call('disk_info');const opts=diskDevices.drives.map(d=>`<option value="${d.drive}">${d.drive} · ${esc(d.filesystem)} · 可用 ${fmtSize(d.free)}</option>`).join('');$('#disk_source').innerHTML='<option value="">選擇磁碟</option>'+opts;diskMode()}catch(e){diskLoaded=false}}
+$('#disk_refresh').onclick=()=>waiting($('#disk_refresh'),async()=>{diskLoaded=false;await diskInit()});['mode','source'].forEach(k=>$('#disk_'+k).onchange=diskMode);
+$('#disk_preview_btn').onclick=()=>waiting($('#disk_preview_btn'),async()=>{diskPlan=await call('disk_preview',$('#disk_mode').value,$('#disk_source').value,'','documents','regular');$('#disk_plan').innerHTML=`<div class="row"><b>${esc(diskPlan.description)}</b></div>`+diskPlan.warnings.map(w=>`<div class="row"><span class="lab" style="white-space:normal">${esc(w)}</span></div>`).join('');$('#disk_launch').disabled=!diskPlan.available||!$('#disk_ack').checked});
 $('#disk_ack').onchange=()=>$('#disk_launch').disabled=!diskPlan?.available||!$('#disk_ack').checked;
-$('#disk_help_btn').onclick=()=>call('disk_help',$('#disk_mode').value=='recovery'?'recovery':'check');
+$('#disk_help_btn').onclick=()=>call('disk_help','check');
 $('#disk_launch').onclick=()=>waiting($('#disk_launch'),async()=>{if(!diskPlan||!$('#disk_ack').checked)return;const result=await call('disk_launch',diskPlan.token,true);diskPlan=null;$('#disk_ack').checked=false;$('#disk_plan').innerHTML=`<div class="row"><span class="lab">${esc(result)}</span></div>`;toast('已要求 Windows 開啟工具，請在系統視窗中確認');$('#disk_launch').disabled=true});
 /* ---------- boot ---------- */
 window.addEventListener('pywebviewready',async()=>{API=window.pywebview.api;const r=await API.init();S=r.settings;TS=r.tools;
- PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');$('#aed').textContent=(r.edition||'試用版')+'・免費・沒有期限';document.title='四維八德（'+(r.edition||'試用版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
+ PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');$('#aed').textContent=(r.edition||'開源版')+'・免費・沒有期限';document.title='四維八德（'+(r.edition||'開源版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
  sw('hw',S.hwaccel);sw('fastcopy',S.fastcopy!==false);sw('loudnorm',S.loudnorm);$('#finsel').value=S.finish||'sound';
  if(S.qmin){$('#activity').classList.add('min');$('#amin').style.transform='rotate(180deg)'}
  if((S.dl||{}).out_dir)$('#d_dir').textContent=S.dl.out_dir;if(S.dl){if(S.dl.quality)$('#d_q').value=S.dl.quality;sw('d_subs',S.dl.subs);sw('d_pl',S.dl.playlist);if(S.dl.thumb===false)sw('d_thumb',false)}
+ if(r.missing&&r.missing.length)toast('缺少內建元件：'+r.missing.map(m=>m.name+'（'+m.use+'）').join('、')+'。請重新安裝完整版本',1);
  if(!r.ytdlp){$('#d_go').disabled=true;$('#d_msg').innerHTML='<span class="warn">缺少下載元件（tools\\yt-dlp.exe）</span>'}
  const hwc=hw=>$('#hwchip').innerHTML=`<i style="${hw&&!hw.length?'background:var(--gray)':''}"></i>${hw==null?'偵測顯示卡中…':hw.length?'硬體加速：'+hw.join('、'):'使用 CPU 轉檔'}`;
  const hp=async()=>{const hw=await API.hwinfo();hwc(hw);if(hw==null)setTimeout(hp,800)};hp();
- const st=await API.startup_files();const valid=['workflow','convert','rec','dl','auto','system','disk',...TS.groups.map(g=>g[0])];
+ const st=await API.startup_files();const valid=['pdfhub','workflow','convert','rec','dl','auto','system','disk',...TS.groups.map(g=>g[0])];
  wfInit(r.workflows);$('#wf_video_size').value=PC.ram<=4.5?'480':'720';$('#resource_mode').value=S.resource_mode||'auto';$('#aver').textContent+=' · '+PC.system+' · '+PC.ram+' GB RAM · '+PC.cores+' 執行緒';if(PC.emulated)toast('目前在 ARM 的 x64 模擬環境執行，部分硬體加速尚未驗證',1);$('#codec').value=S.codec||'auto';$('#verify_full').checked=!!S.verify_full;go(st.length?'convert':valid.includes(S.tab)?S.tab:'workflow');if(st.length)addFiles(st);render();poll()});
 render();
-</script></body></html>
+</script><script src="pdf.js"></script></body></html>

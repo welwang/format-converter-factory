@@ -29,3 +29,22 @@ autosync/state/
 !/_build/tests/
 !/_build/requirements-lock.txt
 !/_build/requirements.txt
+
+!/COPYING.AGPL-3.0
+!/開源與散布說明.md
+!/PDF功能清單.md
+
+# 2.3.0 source, logo and public test documentation
+!/assets/
+!/TEST_RESULTS.md
+!/測試報告.html
+!/_build/建置安裝包.ps1
+!/_build/shell/
+/_build/shell/sdk/
+/_build/shell/out/
+/_build/shell/*.log
+/_build/shell/*.obj
+/_build/shell/*.res
+!/source/
+/source/*
+!/source/來源清單.json

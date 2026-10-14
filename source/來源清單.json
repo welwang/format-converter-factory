@@ -1,0 +1,48 @@
+{
+  "version": "2.3.0",
+  "application_source": "application/",
+  "application_licenses": [
+    "GPL-3.0",
+    "AGPL-3.0"
+  ],
+  "upstream_archives": [
+    {
+      "file": "pymupdf-1.28.2.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/a3/fb/b6761fa2d5266f2cdb24c3b91f4023070ab7848381417678e7a289a1d52a/pymupdf-1.28.2.tar.gz",
+      "bytes": 87903557,
+      "sha256": "5e0be7908a715aa20333caddd73f1d6f01e4cd0c26e869fa2dd0b7f344da2249"
+    },
+    {
+      "file": "pikepdf-10.17.0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/b8/c3/8fc5695947a711263e17786c1d913b0cea660a1b174a9e0e944ad037732c/pikepdf-10.17.0.tar.gz",
+      "bytes": 9973818,
+      "sha256": "de4ccaae83628e86c1fd473b384c09c6ff1dd35a583a8dacbf61d2aa4bea843b"
+    },
+    {
+      "file": "ghostpdl-10.08.0.tar.gz",
+      "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/ghostpdl-10.08.0.tar.gz",
+      "bytes": 100048752,
+      "sha256": "605821a16ddbc159d8f6ccd961e0b96e6fee5af28048ea3b3ceaa1927237bdd6"
+    },
+    {
+      "file": "llama.cpp-b11609.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b11609.tar.gz",
+      "bytes": 38129759,
+      "sha256": "d07ca001968d167743b97841298845bdabf86cc5a4e555f39e522e57b7ea0207"
+    }
+  ],
+  "public_distribution_audit_complete": false,
+  "gaps": [
+    "FFmpeg 9.0.1 full build 的所有間接程式庫、對應修訂與完整建置腳本尚未逐一封裝核實。",
+    "LibreOffice 26.8、Calibre 9.16.0、Pandoc、7-Zip 及其他既有二進位的精確對應來源／相依建置清單需另作散布審核。",
+    "qpdf、LibRaw、Python 擴充模組及供應鏈元件需確認隨附來源封裝是否涵蓋二進位中的所有修訂。",
+    "Microsoft 元件依其再散布條件提供，不能以 GPL／AGPL 重新授權。"
+  ],
+  "notice": "應用程式来源與文件公開；完整安裝包先作為 GitHub 發布草稿保存。完整對應來源散布審核尚未完成，不宣稱已排除所有法律風險。",
+  "webview2_sdk": {
+    "version": "1.0.4258.31",
+    "url": "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31",
+    "license": "tools/WebView2-SDK-LICENSE.txt",
+    "notice": "tools/WebView2-SDK-NOTICE.txt"
+  }
+}

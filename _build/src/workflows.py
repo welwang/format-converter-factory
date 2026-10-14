@@ -11,7 +11,7 @@ RECIPES = [
 ]
 
 def clean_settings(value):
-    if isinstance(value, dict): return {k: clean_settings(v) for k, v in value.items() if k.lower() not in ('pw', 'password', 'token', 'cookies', 'cookie') and not k.startswith('_')}
+    if isinstance(value, dict): return {k: clean_settings(v) for k, v in value.items() if k.lower() not in ('pw', 'password', 'pfx_pw', 'token', 'cookies', 'cookie') and not (k=='data' and value.get('kind')=='signature') and not k.startswith('_')}
     if isinstance(value, list): return [clean_settings(v) for v in value]
     return value
 

@@ -1,15 +1,17 @@
 import os, sys, json, threading, base64, subprocess, copy, uuid
-import webview
+# The window belongs to the C program (四維八德.exe); this module is the engine's API behind it.
+OPEN_DIALOG, FOLDER_DIALOG, SAVE_DIALOG = 'open', 'folder', 'save'
 import engine as E
 import tools as T
 import capture as C
 import workflows as W
 import system_tools as ST
 import disk_tools as DT
+import file_actions as FA
 
 SETTINGS = os.path.join(E.data_dir(), 'settings.json')
-VERSION = '2.1.0'
-EDITION = '試用版'                 # free, no time limit, no locked features - just labelled like WinRAR / 7-Zip style freeware
+VERSION = '2.3.0'
+EDITION = '開源版'
 TITLE = f'四維八德（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,
                 finish='sound', watch=[], tool_opts={}, rec={}, dl={}, tab='workflow', flow_profiles=[], codec='auto', verify_full=False, resource_mode='auto')
@@ -45,7 +47,7 @@ class Api:
     def disk_info(self): return DT.inventory()
 
     def disk_preview(self, mode, source, destination, group, recovery_mode):
-        if self._eng.busy(): raise ValueError('請先完成目前工作，避免同時存取要修復或救援的磁碟')
+        if self._eng.busy(): raise ValueError('請先完成目前工作，避免同時存取要檢查或修復的磁碟')
         self._disk_plan = DT.plan(mode, source, destination, group, recovery_mode)
         return {k:v for k,v in self._disk_plan.items() if k!='command'}
 
@@ -97,7 +99,7 @@ class Api:
     def workflow_export(self, pid):
         profile = next((p for p in self._s.get('flow_profiles', []) if p.get('id') == pid), None)
         if not profile: raise ValueError('請先保存配方')
-        paths = self._win.create_file_dialog(webview.SAVE_DIALOG, save_filename='交付配方.zdgc.json', file_types=('交付配方 (*.json)',))
+        paths = self._win.create_file_dialog(SAVE_DIALOG, save_filename='交付配方.zdgc.json', file_types=('交付配方 (*.json)',))
         if not paths: return ''
         path = paths[0] if isinstance(paths, (list, tuple)) else paths
         with open(path, 'w', encoding='utf-8') as fh: json.dump(dict(format='zdgc-workflow', version=1, profile=W.valid_profile(profile)), fh, ensure_ascii=False, indent=2)
@@ -114,21 +116,47 @@ class Api:
     # ---------- tools
     def tools_schema(self): return T.schema()
 
+    def pdf_preview(self,path,page=1,pw=''):
+        import pdf_tools
+        return pdf_tools.preview(path,page,pw)
+
+    def pdf_scan(self):
+        if os.name!='nt':raise ValueError('掃描器擷取僅支援 Windows')
+        destination=os.path.join(E.data_dir(),'掃描原圖');os.makedirs(destination,exist_ok=True)
+        path=os.path.join(destination,'掃描_'+uuid.uuid4().hex[:12]+'.jpg')
+        powershell=os.path.join(os.environ.get('WINDIR',r'C:\Windows'),'System32','WindowsPowerShell','v1.0','powershell.exe')
+        r=subprocess.run([powershell,'-NoProfile','-ExecutionPolicy','Bypass','-File',res('ui/scan.ps1'),'-Destination',path],capture_output=True,creationflags=E.NOWIN)
+        if r.returncode or not os.path.isfile(path):raise ValueError('未取得掃描圖片，請確認掃描器與驅動程式，或改用匯入圖片')
+        return self.describe([path])
+
+    def pdf_html(self,text):
+        if not isinstance(text,str) or len(text)>2*1024*1024:raise ValueError('HTML 內容過大')
+        if not text.strip():raise ValueError('請貼上 HTML 內容')
+        root=os.path.join(E.data_dir(),'HTML原稿');os.makedirs(root,exist_ok=True)
+        path=os.path.join(root,'文件_'+uuid.uuid4().hex[:12]+'.html')
+        with open(path,'w',encoding='utf-8') as f:f.write(text)
+        return self.describe([path])
+
     def tool_files(self, paths, tool):
         acc = T.TOOL[tool]['accept']
         return [d for d in self.describe(paths) if d['cat'] in acc]
 
     def run_tool(self, tool, paths, params):
         t = T.TOOL[tool]
+        if len(paths)<t.get('min_files',2 if t.get('together') else 1):raise ValueError('加入的檔案數不足')
+        if t.get('max_files') and len(paths)!=t['max_files']:raise ValueError(f'請加入 {t["max_files"]} 個檔案')
+        if tool in ('p_edit','p_sign','p_redact','p_forms'):
+            import pdf_tools
+            params=dict(params or {});params['actions']=pdf_tools.safe_actions(params.get('actions'))
         opt = dict(self.base_opt(), **(params or {}))
-        self._s.setdefault('tool_opts', {})[tool] = W.clean_settings({k: v for k, v in (params or {}).items() if k not in ('rect',)})
+        self._s.setdefault('tool_opts', {})[tool] = W.clean_settings({k: v for k, v in (params or {}).items() if k not in ('rect','actions','pfx')})
         self.save_settings({})
         return self._eng.submit_tool(tool, paths, opt, t['name'], together=bool(t.get('together')), heavy=tool in T.HEAVY)
 
     def pick_file(self, filt=''):
         ft = (filt,) if filt else ()
-        try: r = self._win.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, file_types=ft + ('所有檔案 (*.*)',))
-        except Exception: r = self._win.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False)
+        try: r = self._win.create_file_dialog(OPEN_DIALOG, allow_multiple=False, file_types=ft + ('所有檔案 (*.*)',))
+        except Exception: r = self._win.create_file_dialog(OPEN_DIALOG, allow_multiple=False)
         return r[0] if r else ''
 
     def preview(self, path, t=None):
@@ -136,7 +164,9 @@ class Api:
         cat, ext = E.classify(path)
         if cat == 'image':
             from PIL import Image
-            im = T.open_img(path); W, H = im.size; im = E.flatten(im); im.thumbnail((1280, 1280))
+            real = []
+            def want(w, h): real[:] = [w, h]; return 1280 / max(w, h)     # decode big JPEGs pre-shrunk, report the true size
+            im = T.open_img(path, want); W, H = real or im.size; im = E.flatten(im); im.thumbnail((1280, 1280))
             import io; b = io.BytesIO(); im.save(b, 'JPEG', quality=85)
             return dict(src='data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode(), w=W, h=H, dur=0)
         i = E.probe_info(path); d = i['dur']; t = d * 0.3 if t is None else float(t)
@@ -193,7 +223,7 @@ class Api:
         hw = E._HW if (E._HW is not None and not E._HW_BUSY) else []
         names = {'h264_nvenc': 'NVIDIA NVENC', 'h264_qsv': 'Intel QSV', 'h264_amf': 'AMD AMF'}
         pc = dict(E.platform_info(), low=E.low_end())
-        return dict(version=VERSION, edition=EDITION, pc=pc, settings=self._s, hw=[names[h] for h in hw], ffmpeg=bool(E.FFMPEG), office=bool(E.SOFFICE), tools=T.schema(), ytdlp=bool(C.ytdlp()), workflows=self.workflow_schema())
+        return dict(version=VERSION, edition=EDITION, pc=pc, settings=self._s, hw=[names[h] for h in hw], ffmpeg=bool(E.FFMPEG), office=bool(E.SOFFICE), tools=T.schema(), ytdlp=bool(C.ytdlp()), workflows=self.workflow_schema(), missing=E.missing_components())
 
     def save_settings(self, s):
         with self._settings_lock:
@@ -214,16 +244,11 @@ class Api:
             return ids[0]
         return r
     def open_file(self, path):
-        if path and os.path.exists(path):
-            try: os.startfile(path)
-            except Exception: self.reveal(path)
-        return True
+        return FA.open_file(path)
     def open_doc(self, name):
-        p = os.path.join(E.base_dir(), {'license': '授權說明.md', 'guide': '使用說明.md', 'eula': '使用授權條款.md'}.get(name, ''))
-        if os.path.isfile(p):
-            try: os.startfile(p)
-            except Exception: self.reveal(p)
-        return True
+        document = {'license': '授權說明.md', 'guide': '使用說明.md', 'eula': '使用授權條款.md', 'tests': '測試報告.html'}.get(name)
+        if not document: raise ValueError('不支援的說明文件')
+        return FA.open_file(os.path.join(E.base_dir(), document))
     def open_log(self):
         d = E.log_dir()
         try: os.startfile(d)
@@ -231,11 +256,13 @@ class Api:
         return d
     def media_info(self, paths):
         """Duration / resolution / HDR for the file lists (video and audio only)."""
-        out = {}
-        for p in (paths or []):
-            if E.classify(p)[0] in ('video', 'audio'):
-                i = E.probe_info(p); out[p] = dict(dur=i['dur'], w=i['width'], h=i['height'], hdr=i.get('hdr', ''), a=i['acodec'])
-        return out
+        # each probe is a separate ffmpeg process that mostly waits on the disk: run several at once
+        paths = [p for p in (paths or []) if E.classify(p)[0] in ('video', 'audio')]
+        if not paths: return {}
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max(1, min(6, len(paths), os.cpu_count() or 2))) as ex:
+            infos = list(ex.map(E.probe_info, paths))
+        return {p: dict(dur=i['dur'], w=i['width'], h=i['height'], hdr=i.get('hdr', ''), a=i['acodec']) for p, i in zip(paths, infos)}
 
     def describe(self, paths):
         out = []
@@ -248,11 +275,11 @@ class Api:
         return out
 
     def pick_files(self):
-        r = self._win.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=True)
+        r = self._win.create_file_dialog(OPEN_DIALOG, allow_multiple=True)
         return self.describe(list(r or []))
 
     def pick_folder(self, purpose='add'):
-        r = self._win.create_file_dialog(webview.FOLDER_DIALOG)
+        r = self._win.create_file_dialog(FOLDER_DIALOG)
         if not r: return None
         if purpose == 'out': return r[0]
         return self.describe([r[0]])
@@ -270,7 +297,19 @@ class Api:
     def formats(self): return E.format_table()
     def startup_files(self):
         return self.describe([a for a in sys.argv[1:] if os.path.exists(a)])
-    def status(self): return dict(jobs=self._eng.status(), rec=self._rec.state(), shutdown=self.pending_shutdown, finish=self._s.get('finish', 'sound'))
+    def monitor_state(self):
+        """What the C program needs every second for the title bar, sleep prevention and finish actions."""
+        with self._eng.lock:
+            act = [dict(id=j.id, progress=j.info()['progress']) for j in (self._eng.jobs[i] for i in self._eng.order) if j.state in ('queued', 'running')]
+            recent = [dict(id=j.id,state=j.state,created=j.created,output=j.output or '') for j in (self._eng.jobs[i] for i in self._eng.order[-150:])]
+        return dict(active=act,recent=recent,finish=self._s.get('finish', 'sound'),shutdown=self.pending_shutdown,rec=bool(self._rec.state().get('rec')))
+
+    def job_states(self, ids):
+        return {i: (self._eng.jobs[i].state if i in self._eng.jobs else self._eng.outcomes.get(i, '')) for i in ids or []}
+
+    def status(self):
+        active = self._eng.counts()
+        return dict(jobs=self._eng.status(tail=150), active=active, busy=active > 0, rec=self._rec.state(), shutdown=self.pending_shutdown, finish=self._s.get('finish', 'sound'))
     def cancel(self, jid):
         if self._rec.job and self._rec.job.id == jid: self.rec_stop()
         else: self._eng.cancel(jid)
@@ -286,170 +325,35 @@ class Api:
         if self._rec.state().get('rec'): self._rec.stop()
         self._eng.shutdown(); self.save_settings({})
     def reveal(self, path):
-        if path and os.path.exists(path):
-            import subprocess
-            subprocess.Popen(['explorer', '/select,', os.path.normpath(path)])
-        return True
+        return FA.reveal(path)
 
 def monitors_safe():
     try: return C.monitors()
     except Exception: return [dict(idx=0, label='螢幕 1')]
 
-def on_drop(e):
-    files = e.get('dataTransfer', {}).get('files', [])
-    paths = [f.get('pywebviewFullPath') for f in files if f.get('pywebviewFullPath')]
-    if paths:
-        api._win.evaluate_js(f'window.onDropped({json.dumps(api.describe(paths), ensure_ascii=False)}, {json.dumps(paths, ensure_ascii=False)})')
-
-def bind(win):
-    from webview.dom import DOMEventHandler
-    win.dom.document.events.dragover += DOMEventHandler(lambda e: None, True, True)
-    win.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
-
-api = None   # created in __main__ after the single-instance check
-PIPE = r'\\.\pipe\ZhuanDangGongChang-' + (os.environ.get('USERNAME') or 'user')
-
-def forward_to_running():
-    """If 四維八德 is already open, hand our files to it (and bring it to the front) instead of opening a 2nd window."""
-    if os.name != 'nt': return False
-    try:
-        from multiprocessing.connection import Client
-        c = Client(PIPE, family='AF_PIPE', authkey=b'zdgc'); c.send([os.path.abspath(a) for a in sys.argv[1:] if os.path.exists(a)]); c.close()
-        return True
-    except Exception:
-        return False
-
-def serve_instances():
-    if os.name != 'nt': return
-    from multiprocessing.connection import Listener
-    try: lst = Listener(PIPE, family='AF_PIPE', authkey=b'zdgc')
-    except Exception: return
-    while True:
-        try:
-            c = lst.accept(); paths = c.recv(); c.close()
-        except Exception:
-            continue
-        w = api._win
-        try:
-            w.restore(); w.show()
-            if os.name == 'nt': ctypes_foreground()
-        except Exception: pass
-        if paths:
-            try: w.evaluate_js(f'window.onDropped({json.dumps(api.describe(paths), ensure_ascii=False)}, {json.dumps(paths, ensure_ascii=False)})')
-            except Exception: pass
-
-def ctypes_foreground():
-    import ctypes
-    u = ctypes.windll.user32
-    h = u.FindWindowW(None, api._win.title) if api._win else 0
-    if h: u.ShowWindow(h, 9); u.SetForegroundWindow(h)
+api = None   # set by core.py
 
 def monitor():
     """Window title shows overall progress; the PC does not go to sleep mid-conversion; the taskbar button flashes when done."""
     import time
-    was = False; sleep_blocked = False
+    was = False; sleep_blocked = False; shown = TITLE
     while True:
         time.sleep(1)
         try:
             jobs = api._eng.status(); act = [j for j in jobs if j['state'] in ('queued', 'running')]
             busy = bool(act)
-            if busy:
-                p = sum(j['progress'] for j in act) / len(act)
-                title = f'{p * 100:.0f}% · {len(act)} 個工作 — {TITLE}'
-            else: title = TITLE
-            if api._win and api._win.title != title:
-                try: api._win.set_title(title)
-                except Exception: pass
+            title = f'{sum(j["progress"] for j in act) / len(act) * 100:.0f}% · {len(act)} 個工作 — {TITLE}' if busy else TITLE
+            if api._win and title != shown:
+                api._win.set_title(title); shown = title
             if os.name == 'nt':
                 import ctypes
                 if busy and not sleep_blocked: ctypes.windll.kernel32.SetThreadExecutionState(0x80000001); sleep_blocked = True
                 elif not busy and sleep_blocked: ctypes.windll.kernel32.SetThreadExecutionState(0x80000000); sleep_blocked = False
-                if was and not busy:
-                    u = ctypes.windll.user32; h = u.FindWindowW(None, TITLE)
-                    if h and u.GetForegroundWindow() != h:
-                        class FW(ctypes.Structure): _fields_ = [('cbSize', ctypes.c_uint), ('hwnd', ctypes.c_void_p), ('dwFlags', ctypes.c_uint), ('uCount', ctypes.c_uint), ('dwTimeout', ctypes.c_uint)]
-                        fw = FW(ctypes.sizeof(FW), h, 0x3 | 0xC, 0, 0); u.FlashWindowEx(ctypes.byref(fw))   # FLASHW_ALL | FLASHW_TIMERNOFG
+            if was and not busy and api._win: api._win.flash()
             was = busy
         except Exception:
             pass
 
-def win_geometry():
-    """Fit the window to the usable screen area (taskbar excluded), in logical pixels, so it also works on
-    1366x768 laptops at 125 % scaling. Saved size/position is reused only if it still fits."""
-    g = api._s.get('win') or {}
-    W, H, ox, oy = 1366, 728, 0, 0
-    try:
-        import ctypes
-        from ctypes import wintypes
-        r = wintypes.RECT(); ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0)   # SPI_GETWORKAREA
-        try: k = ctypes.windll.user32.GetDpiForSystem() / 96
-        except Exception: k = 1.0
-        W, H, ox, oy = (r.right - r.left) / k, (r.bottom - r.top) / k, r.left / k, r.top / k
-    except Exception:
-        pass
-    dw, dh = min(1240, int(W * 0.94)), min(820, int(H * 0.94))
-    w = int(g.get('w') or dw); h = int(g.get('h') or dh)
-    w = max(min(w, int(W)), min(900, int(W))); h = max(min(h, int(H)), min(560, int(H)))
-    x, y = g.get('x'), g.get('y')
-    if x is None or y is None or not (ox - 20 <= x <= ox + W - 200 and oy - 10 <= y <= oy + H - 100):
-        x, y = int(ox + (W - w) / 2), int(oy + (H - h) / 2)
-    return w, h, x, y
-
-def remember(**kw):
-    g = dict(api._s.get('win') or {}); g.update(kw); api._s['win'] = g
-
-WV2_ID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-def webview2_ok():
-    """Edge WebView2 runtime (the window engine). Built into Windows 11 and updated Windows 10."""
-    if os.name != 'nt': return True
-    import winreg
-    for root, sub in ((winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\' + WV2_ID),
-                      (winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\' + WV2_ID),
-                      (winreg.HKEY_CURRENT_USER, 'Software\\Microsoft\\EdgeUpdate\\Clients\\' + WV2_ID)):
-        try:
-            with winreg.OpenKey(root, sub) as k:
-                v = winreg.QueryValueEx(k, 'pv')[0]
-                if v and v != '0.0.0.0': return True
-        except OSError: continue
-    return False
-
-def ensure_webview2():
-    """Never depend on what the PC happens to have: use the installed runtime, else a private copy in
-    tools\\webview2 (Fixed Version runtime), else offer the bundled installer."""
-    if webview2_ok(): return True
-    fixed = E.bundled('webview2')
-    if os.path.isfile(os.path.join(fixed, 'msedgewebview2.exe')):
-        os.environ['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = fixed; return True
-    import ctypes
-    setup = E.bundled('MicrosoftEdgeWebview2Setup.exe')
-    msg = ('四維八德的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n'
-           + ('按「確定」立即安裝（約 1 分鐘，需要網路），完成後會自動開啟四維八德。' if os.path.isfile(setup) else '請到 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。'))
-    r = ctypes.windll.user32.MessageBoxW(None, msg, TITLE, 0x41 if os.path.isfile(setup) else 0x30)
-    if r == 1 and os.path.isfile(setup):
-        subprocess.run([setup, '/silent', '/install'])
-        return webview2_ok()
-    return False
-
 if __name__ == '__main__':
-    if os.name == 'nt' and not E.platform_info()['supported']:
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(None, '這個版本支援 Windows 10／11 64 位元。請使用符合系統架構的版本。', TITLE, 0x30); sys.exit(1)
-    if len(sys.argv) > 1 and sys.argv[1] == '--selftest':
-        import selftest
-        sys.exit(selftest.main(sys.argv[2] if len(sys.argv) > 2 else None))
-    if forward_to_running(): sys.exit(0)
-    if not ensure_webview2(): sys.exit(1)
-    api = Api()
-    import threading as _t
-    _t.Thread(target=serve_instances, daemon=True).start()
-    _t.Thread(target=monitor, daemon=True).start()
-    w, h, x, y = win_geometry()
-    api._win = webview.create_window(TITLE, url=res('ui/index.html'), js_api=api, width=w, height=h, x=x, y=y,
-                                    min_size=(900, 560), background_color='#F5F5F7')
-    try:
-        api._win.events.resized += lambda width, height: remember(w=width, h=height)
-        api._win.events.moved += lambda x, y: remember(x=x, y=y)
-        api._win.events.closing += api.close
-    except Exception: pass
-    webview.start(bind, api._win, gui='edgechromium', private_mode=True, debug=False)
-    api.save_settings({})
+    import core
+    sys.exit(core.main())

@@ -4,8 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('src/ui', 'ui'), ('src/zhdict', 'zhdict')]
 binaries = []
-hiddenimports = ['tools', 'capture', 'workflows', 'validation', 'system_tools', 'disk_tools', 'zhconv', 'selftest', 'cryptography']
-hiddenimports += collect_submodules('webview')
+hiddenimports = ['app', 'tools', 'capture', 'workflows', 'validation', 'system_tools', 'disk_tools', 'zhconv', 'selftest', 'cryptography', 'pdf_schema', 'pdf_tools', 'pdf_local_engines', 'file_actions', 'pdf_selftest']
 tmp_ret = collect_all('cryptography')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pypdfium2')
@@ -20,16 +19,20 @@ tmp_ret = collect_all('trimesh')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
+for package in ['pymupdf','pikepdf','docx','pptx','openpyxl','pyhanko','pyhanko_certvalidator','qrcode','lxml','tzdata','aiohttp']:
+    extra = collect_all(package)
+    datas += extra[0]; binaries += extra[1]; hiddenimports += extra[2]
+
 a = Analysis(
-    ['src/app.py'],
-    pathex=['vendor'],
+    ['src/core.py'],
+    pathex=['vendor', 'src'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['pillow_heif', 'tkinter', 'matplotlib', 'setuptools', 'pip', 'test'],
+    excludes=['pillow_heif', 'tkinter', 'matplotlib', 'setuptools', 'pip', 'test', 'webview', 'pythonnet', 'clr_loader', 'clr', 'proxy_tools', 'bottle'],
     noarchive=False,
     optimize=0,
 )
@@ -40,12 +43,12 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='ZDGC',
+    name='swbd-core',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=True,       # no window of its own: started hidden by 四維八德.exe, talks over stdin / stdout
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -60,5 +63,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='ZDGC',
+    name='swbd-core',
 )

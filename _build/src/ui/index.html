@@ -1,0 +1,453 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>轉檔工廠</title><link rel="icon" href="logo.png">
+<style>
+:root{
+ --blue:#007AFF;--green:#34C759;--red:#FF3B30;--orange:#FF9500;--pink:#FF2D55;--purple:#AF52DE;--indigo:#5856D6;--teal:#30B0C7;--cyan:#32ADE6;--gray:#8E8E93;--brown:#A2845E;
+ --bg:#F5F5F7;--side:rgba(236,236,240,.86);--card:#FFFFFF;--fill:rgba(118,118,128,.12);--fill2:rgba(118,118,128,.08);
+ --sep:rgba(60,60,67,.13);--tx:#1D1D1F;--tx2:rgba(60,60,67,.62);--tx3:rgba(60,60,67,.36);--sel:rgba(0,122,255,.12);--shadow:0 1px 2px rgba(0,0,0,.05),0 2px 10px rgba(0,0,0,.04);--knob:#fff;
+ --r:12px;color-scheme:light}
+.dark{--bg:#161618;--side:rgba(38,38,41,.9);--card:#232325;--fill:rgba(118,118,128,.24);--fill2:rgba(118,118,128,.16);--sep:rgba(84,84,88,.55);--tx:#F5F5F7;--tx2:rgba(235,235,245,.6);--tx3:rgba(235,235,245,.3);
+ --sel:rgba(10,132,255,.22);--shadow:0 0 0 1px rgba(255,255,255,.04);--blue:#0A84FF;--green:#30D158;--red:#FF453A;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}body{margin:0;font:13.5px/1.45 -apple-system,"SF Pro Text","Segoe UI Variable Text","Segoe UI","Microsoft JhengHei UI","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--tx);overflow:hidden;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+button,select,input,textarea{font:inherit;color:inherit;letter-spacing:inherit}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);height:100vh}
+/* ---------- sidebar ---------- */
+.side{background:var(--side);backdrop-filter:saturate(180%) blur(30px);border-right:1px solid var(--sep);display:flex;flex-direction:column;min-height:0}
+.sb-head{display:flex;align-items:center;gap:10px;padding:18px 16px 12px}.sb-head img{width:34px;height:34px}
+.sb-head b{font-size:15px;font-weight:650;display:block;letter-spacing:.02em}.sb-head small{color:var(--tx2);font-size:11.5px}
+.search{display:flex;align-items:center;gap:6px;margin:4px 12px 10px;background:var(--fill);border-radius:9px;padding:0 9px;height:30px;color:var(--tx2)}
+.search input{border:0;background:none!important;outline:none;width:100%;color:var(--tx);padding:0;box-shadow:none!important}.search svg.i{width:15px;height:15px}
+.sb-scroll{overflow:auto;flex:1;padding:0 10px 10px}
+.sb-label{font-size:11px;font-weight:600;color:var(--tx3);margin:14px 8px 4px;letter-spacing:.04em}
+.nav{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:8px;cursor:pointer;font-size:13.5px;user-select:none;min-height:32px}
+.nav:hover{background:var(--fill2)}.nav.on{background:var(--sel)}.nav.on span{font-weight:600}
+.nav .cnt{margin-left:auto;font-size:11.5px;color:var(--tx2);font-variant-numeric:tabular-nums}.nav .live{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red);display:none}.nav .live.on{display:block;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.tile{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:#fff;flex:none;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.08)}
+.tile svg.i{width:15px;height:15px;stroke-width:2}
+.tile.lg{width:52px;height:52px;border-radius:12px}.tile.lg svg.i{width:30px;height:30px;stroke-width:1.7}.tile.md{width:30px;height:30px;border-radius:7px}.tile.md svg.i{width:17px;height:17px}
+.sb-foot{border-top:1px solid var(--sep);padding:10px 14px 12px;display:flex;flex-direction:column;gap:8px}
+.status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx2)}.status i{width:7px;height:7px;border-radius:50%;background:var(--green);flex:none}
+/* ---------- content ---------- */
+.content{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-width:0;min-height:0}
+.bar{display:flex;align-items:flex-end;gap:12px;padding:20px 26px 12px}
+.bar h1{margin:0;font-size:26px;font-weight:700;letter-spacing:.01em;line-height:1.1}.bar .sub{color:var(--tx2);font-size:13px;margin-left:2px;padding-bottom:2px}
+.bar .tools{margin-left:auto;display:flex;gap:6px;align-items:center}
+.page{display:none;min-height:0;padding:0 26px 14px}.page.on{display:grid}
+.col{max-width:760px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:22px;overflow:auto;padding-bottom:20px}
+.page.scroll.on{display:block;overflow:auto}
+/* grouped lists (iOS inset grouped) */
+.group{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.ghead{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx2);margin:0 4px 7px;font-weight:500;letter-spacing:.03em}.ghead .r{margin-left:auto;display:flex;gap:4px;align-items:center}
+.gfoot{font-size:12px;color:var(--tx2);margin:7px 4px 0;line-height:1.5}
+.row{display:flex;align-items:center;gap:12px;min-height:44px;padding:6px 14px;position:relative}
+.row+.row:before{content:"";position:absolute;top:0;left:14px;right:0;height:1px;background:var(--sep);transform:scaleY(.6)}
+.row.ic+.row.ic:before{left:54px}
+.row .lab{flex:1;min-width:0}.row .lab small{display:block;color:var(--tx2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .val{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0;justify-content:flex-end}
+.row.click{cursor:pointer}.row.click:hover{background:var(--fill2)}.row.on{background:var(--sel)}
+.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mute{color:var(--tx2)}.small{font-size:12px}
+.chev{color:var(--tx3)}.chev svg.i{width:14px;height:14px;stroke-width:2.2}
+/* controls */
+.btn{border:0;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .15s,opacity .15s,transform .1s;background:var(--fill);color:var(--tx)}
+.btn:hover{filter:brightness(.97)}.btn:active{transform:scale(.97)}.btn:disabled{opacity:.4;pointer-events:none}
+.btn.pri{background:var(--blue);color:#fff;font-weight:600}.btn.tint{background:rgba(0,122,255,.12);color:var(--blue)}.dark .btn.tint{background:rgba(10,132,255,.2)}
+.btn.plain{background:none;color:var(--blue);padding:4px 8px}.btn.plain:hover{background:var(--fill2)}.btn.danger{color:var(--red)}
+.btn.lg{padding:11px 18px;font-size:15px;border-radius:11px;width:100%;justify-content:center}
+.btn.icon{padding:5px;border-radius:7px;background:none;color:var(--tx2)}.btn.icon:hover{background:var(--fill2);color:var(--tx)}
+select,input[type=text],input[type=number],input:not([type]),textarea{background:var(--fill);border:0;border-radius:8px;padding:6px 10px;outline:none;color:var(--tx);min-width:0}
+select{appearance:none;padding-right:28px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m8 9 4-4 4 4M8 15l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;background-size:14px}
+select:focus,input:focus,textarea:focus{box-shadow:0 0 0 3px rgba(0,122,255,.3)}
+.val select,.val input{width:220px;text-align:left}.val input[type=number]{width:110px;text-align:right}
+input[type=color]{appearance:none;border:0;width:44px;height:28px;padding:0;background:none;cursor:pointer}input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-webkit-color-swatch{border:1px solid var(--sep);border-radius:7px}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--blue);margin:0}
+input[type=range]{accent-color:var(--blue)}
+.sw{position:relative;width:46px;height:28px;border-radius:99px;background:var(--fill);cursor:pointer;transition:background .25s;flex:none}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:var(--knob);box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.16);transition:left .25s cubic-bezier(.3,.7,.4,1)}
+.sw.on{background:var(--green)}.sw.on:after{left:20px}
+.seg{display:flex;background:var(--fill);border-radius:9px;padding:2px;gap:2px}
+.seg button{flex:1;border:0;background:none;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--tx);white-space:nowrap;transition:background .2s}
+.seg button.on{background:var(--card);box-shadow:0 3px 8px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04);font-weight:600}.dark .seg button.on{background:#636366}
+.prog{height:4px;border-radius:99px;background:var(--fill);overflow:hidden;margin-top:6px}.prog i{display:block;height:100%;background:var(--blue);border-radius:99px;transition:width .4s}
+.badge{font-size:10.5px;font-weight:600;color:var(--blue);background:rgba(0,122,255,.1);padding:1px 7px;border-radius:99px;letter-spacing:.03em}
+.chip{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;color:#fff;letter-spacing:.03em;text-align:center;min-width:40px}
+.empty{color:var(--tx2);text-align:center;padding:34px 16px;font-size:13px;line-height:1.7}
+.warn{color:var(--orange)}.err{color:var(--red)}.ok{color:var(--green)}
+kbd{font:600 11px/1 inherit;border:1px solid var(--sep);border-bottom-width:2px;border-radius:5px;padding:2px 5px;background:var(--card);color:var(--tx2)}
+/* convert */
+#p-convert{grid-template-columns:minmax(0,1fr) 300px;gap:22px}
+.drop{border:1.5px dashed var(--tx3);border-radius:var(--r);padding:20px;display:flex;align-items:center;gap:16px;transition:.2s;background:var(--card)}
+.drop.on{border-color:var(--blue);background:var(--sel)}.drop img{width:44px;height:44px}
+.drop h3{margin:0;font-size:15px;font-weight:600}.drop p{margin:2px 0 0;color:var(--tx2);font-size:12.5px}.drop .act{margin-left:auto;display:flex;gap:8px}
+.cmain{display:grid;grid-template-rows:auto minmax(0,1fr);gap:20px;min-height:0}.cmain .list{display:flex;flex-direction:column;min-height:0}.cmain .list .group{overflow:auto}
+.insp{display:flex;flex-direction:column;gap:18px;overflow:auto;min-height:0;padding-bottom:4px}
+.insp .row .val select,.insp .row .val input{width:150px}
+.insp .stick{position:sticky;bottom:0;margin-top:auto;padding-top:8px;background:linear-gradient(transparent,var(--bg) 30%)}
+/* tools */
+#p-tools{grid-template-columns:290px minmax(0,1fr);gap:22px}
+.tlist{overflow:auto;min-height:0}.tlist .row{min-height:52px}
+.tdetail{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:20px;padding-bottom:4px}
+.thead{display:flex;align-items:center;gap:14px;padding:2px 2px 0}.thead h2{margin:0;font-size:20px;font-weight:700}.thead p{margin:2px 0 0;color:var(--tx2)}
+.order{display:flex;gap:0}.order .btn.icon{padding:3px}
+.fpick{display:flex;align-items:center;gap:8px;min-width:0;max-width:300px}.fpick .nm{color:var(--tx2);font-size:12.5px}
+/* single pages */
+.recbox{display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 20px 24px}
+.recbtn{width:76px;height:76px;border-radius:50%;border:4px solid var(--fill);background:var(--card);cursor:pointer;display:grid;place-items:center;padding:0;transition:transform .12s}
+.recbtn:active{transform:scale(.95)}.recbtn i{display:block;width:54px;height:54px;border-radius:50%;background:var(--red);transition:all .25s cubic-bezier(.3,.7,.4,1)}
+.recbtn.stop i{width:28px;height:28px;border-radius:6px}
+.timer{font-size:44px;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:.02em;line-height:1}
+textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:10px 12px;line-height:1.6}
+/* activity */
+.activity{border-top:1px solid var(--sep);background:var(--card);display:flex;flex-direction:column;min-height:0;max-height:clamp(150px,26vh,250px);transition:max-height .25s}
+.activity.min{max-height:44px}
+.ahead{display:flex;align-items:center;gap:10px;padding:8px 18px 8px 22px;min-height:44px}.ahead b{font-size:13.5px;font-weight:600}
+.ahead .r{margin-left:auto;display:flex;align-items:center;gap:4px}.ahead select{padding:3px 26px 3px 8px;font-size:12.5px;background-color:var(--fill2)}
+.queue{overflow:auto;flex:1;padding:0 8px 6px}
+.q{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:12px;align-items:center;padding:7px 10px;border-radius:9px}
+.q:hover{background:var(--fill2)}.q .t{font-weight:500}.q .s{font-size:12px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.q.done .prog,.q.cancelled .prog{display:none}.q.error .prog{display:none}
+/* modal + toast */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.28);display:none;place-items:center;z-index:9;animation:fade .15s}.modal.on{display:grid}
+@keyframes fade{from{opacity:0}}
+.sheet{background:var(--card);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);width:min(980px,94vw);max-height:88vh;overflow:auto;padding:18px 20px}
+.sheet h3{margin:0 0 12px;font-size:16px;display:flex;align-items:center;gap:10px}.sheet h3 .r{margin-left:auto;font-weight:400;display:flex;gap:8px;align-items:center}
+.ft{width:100%;border-collapse:collapse;font-size:12.5px}.ft td,.ft th{padding:9px 8px;border-bottom:1px solid var(--sep);text-align:left;vertical-align:top}.ft th{color:var(--tx2);font-weight:500}.ft .fx{font-family:"SF Mono",Consolas,monospace;font-size:11.5px;color:var(--tx2)}
+.stage{position:relative;user-select:none;line-height:0;background:#000;border-radius:10px;overflow:hidden;cursor:crosshair;display:inline-block}
+.stage img{max-width:100%;max-height:62vh;display:block}.selbox{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.5);pointer-events:none;border-radius:2px}
+.toast{position:fixed;left:50%;top:18px;transform:translateX(-50%) translateY(-12px);background:var(--card);box-shadow:0 10px 40px rgba(0,0,0,.18),0 0 0 .5px var(--sep);border-radius:99px;padding:9px 18px;opacity:0;transition:.25s;z-index:20;font-size:13px;pointer-events:none;max-width:80vw;font-weight:500;display:flex;gap:8px;align-items:center}
+.toast.on{opacity:1;transform:translateX(-50%)}.toast.err{color:var(--red)}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--fill);border-radius:9px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background-color:var(--tx3)}
+</style></head><body>
+<div class="app">
+<aside class="side">
+ <div class="sb-head"><img src="logo.png" alt=""><div><b>轉檔工廠</b><small>影音、文件、圖片一次搞定</small></div></div>
+ <label class="search"><svg class="i" data-i="search"></svg><input id="gsearch" placeholder="搜尋工具或格式"></label>
+ <div class="sb-scroll" id="nav"></div>
+ <div class="sb-foot"><div class="status" id="hwchip"><i></i>偵測顯示卡中…</div>
+ <div class="seg" id="theme"><button data-v="auto">自動</button><button data-v="light">淺色</button><button data-v="dark">深色</button></div></div>
+</aside>
+<div class="content">
+ <div class="bar"><h1 id="ptitle">轉檔</h1><span class="sub" id="psub"></span><div class="tools"><button class="btn plain" id="fmtbtn">支援格式</button></div></div>
+ <div style="min-height:0;display:grid">
+ <!-- convert -->
+ <section class="page" id="p-convert"><div class="cmain">
+  <div class="drop" id="drop"><img src="logo.png" alt=""><div><h3>將檔案或資料夾拖到這裡</h3><p>自動判斷類型並建議最適合的格式。也可以把檔案拖到轉檔工廠的圖示上。</p></div>
+   <div class="act"><button class="btn tint" id="addf">加入檔案</button><button class="btn tint" id="addd">加入資料夾</button></div></div>
+  <div class="list"><div class="ghead">待轉檔案<span class="r"><button class="btn plain" id="clr">全部移除</button></span></div><div class="group" id="files"></div></div>
+ </div>
+ <aside class="insp">
+  <div><div class="ghead">輸出格式</div><div class="group"><div class="row"><select id="alltarget" style="width:100%"><option value="">每個檔案用建議格式</option></select></div></div></div>
+  <div><div class="ghead">品質</div><div class="seg" id="preset"><button data-v="high">高品質</button><button data-v="balanced">均衡</button><button data-v="small">小檔案</button></div></div>
+  <div><div class="ghead">調整</div><div class="group">
+   <div class="row"><span class="lab">目標大小</span><span class="val"><input id="tmb" type="number" min="0" step="0.5" placeholder="不限" style="width:90px"><span class="mute">MB</span></span></div>
+   <div class="row"><span class="lab">剪下片段</span><span class="val"><input id="ts" type="number" min="0" placeholder="開始秒" style="width:72px"><input id="te" type="number" min="0" placeholder="結束秒" style="width:72px"></span></div>
+   <div class="row"><span class="lab">畫面高度</span><span class="val"><select id="h" style="width:110px"><option value="0">原始</option><option>2160</option><option>1440</option><option>1080</option><option>720</option><option>480</option><option>360</option></select></span></div></div></div>
+  <div><div class="group">
+   <div class="row"><span class="lab">合併成一個檔案</span><div class="sw" id="merge"></div></div>
+   <div class="row"><span class="lab">硬體加速</span><div class="sw" id="hw"></div></div>
+   <div class="row" title="格式相容時直接換封裝，速度快上百倍且畫質零損失"><span class="lab">盡量不重新編碼</span><div class="sw" id="fastcopy"></div></div>
+   <div class="row" title="把音量調整到一致的響度（-16 LUFS）"><span class="lab">音量標準化</span><div class="sw" id="loudnorm"></div></div></div></div>
+  <div><div class="ghead">儲存位置</div><div class="seg" id="outmode"><button data-v="source">原資料夾</button><button data-v="custom">指定資料夾</button></div>
+   <div class="gfoot" id="outdir" style="cursor:pointer;word-break:break-all"></div></div>
+  <div class="stick"><button class="btn pri lg" id="go">開始轉檔</button></div>
+ </aside></section>
+ <!-- tools -->
+ <section class="page" id="p-tools"><div class="tlist"><div class="group" id="tlist"></div></div>
+  <div class="tdetail">
+   <div class="thead"><div class="tile lg" id="t_tile"></div><div><h2 id="t_name"></h2><p id="t_desc"></p></div></div>
+   <div><div class="ghead" id="t_fhead"></div><div class="group" id="t_list"></div><div class="gfoot" id="t_fnote"></div></div>
+   <div id="t_optwrap"><div class="ghead">選項</div><div class="group" id="t_form"></div><div class="gfoot" id="t_note"></div></div>
+   <div style="margin-top:auto;position:sticky;bottom:0;padding-top:8px;background:linear-gradient(transparent,var(--bg) 30%)"><button class="btn pri lg" id="t_go">開始</button></div>
+  </div></section>
+ <!-- recorder -->
+ <section class="page scroll" id="p-rec"><div class="col">
+  <div class="group recbox"><button class="recbtn" id="recbtn" title="開始／停止錄影"><i></i></button><div class="timer" id="rectime">00:00</div><div class="mute small" id="recsub" style="text-align:center"></div></div>
+  <div><div class="ghead">畫面</div><div class="group">
+   <div class="row"><span class="lab">螢幕</span><span class="val"><select id="r_mon"></select></span></div>
+   <div class="row"><span class="lab">範圍</span><span class="val"><select id="r_area"><option value="">整個螢幕</option><option value="custom">自訂區域</option></select></span></div>
+   <div class="row" id="r_regwrap" style="display:none"><span class="lab">區域<small>x, y, 寬, 高（像素）</small></span><span class="val"><input id="r_region" placeholder="0,0,1280,720"></span></div>
+   <div class="row"><span class="lab">畫面更新率</span><span class="val"><select id="r_fps"><option value="30">30 fps　一般</option><option value="60">60 fps　遊戲、動畫</option><option value="15">15 fps　簡報、檔案最小</option></select></span></div>
+   <div class="row"><span class="lab">顯示滑鼠游標</span><div class="sw on" id="r_mouse"></div></div>
+   <div class="row"><span class="lab">開始時縮小視窗</span><div class="sw on" id="r_min"></div></div></div></div>
+  <div><div class="ghead">聲音</div><div class="group" id="r_audio"></div>
+   <div class="gfoot">要錄電腦播放的聲音，請在 Windows「聲音設定 › 錄製」啟用「立體聲混音」，它就會出現在這裡。</div></div>
+ </div></section>
+ <!-- downloader -->
+ <section class="page scroll" id="p-dl"><div class="col">
+  <div><div class="ghead">網址<span class="r"><button class="btn plain" id="d_paste">從剪貼簿貼上</button></span></div>
+   <textarea id="d_urls" placeholder="貼上影片網址，一行一個&#10;https://www.youtube.com/watch?v=…"></textarea></div>
+  <div><div class="ghead">選項</div><div class="group">
+   <div class="row"><span class="lab">下載成</span><span class="val"><select id="d_q" style="width:280px"><option value="best_compat">影片 MP4（相容性最好，最高 4K）</option><option value="best">影片（最高畫質，不限編碼）</option><option value="1080">影片 1080p</option><option value="720">影片 720p</option><option value="mp3">只要聲音 MP3</option><option value="m4a">只要聲音 M4A（原音質）</option></select></span></div>
+   <div class="row"><span class="lab">儲存到</span><span class="val"><span class="nm mute" id="d_dir" style="max-width:260px">下載資料夾</span><button class="btn plain" id="d_dirbtn">更換</button></span></div>
+   <div class="row"><span class="lab">播放清單整個下載</span><div class="sw" id="d_pl"></div></div>
+   <div class="row"><span class="lab">一併下載字幕<small>中文、英文</small></span><div class="sw" id="d_subs"></div></div>
+   <div class="row"><span class="lab">音訊加上封面與歌曲資訊</span><div class="sw on" id="d_thumb"></div></div></div>
+   <div class="gfoot">支援 YouTube、Facebook、Instagram、X、Bilibili、Vimeo 等上千個網站。請只下載你有權使用的內容，並遵守各網站的服務條款與著作權規定。</div></div>
+  <div style="display:flex;gap:10px;align-items:center"><button class="btn pri" id="d_go" style="padding:9px 22px">下載</button><button class="btn" id="d_upd">更新下載元件</button><span class="mute small" id="d_msg"></span></div>
+ </div></section>
+ <!-- automation -->
+ <section class="page scroll" id="p-auto"><div class="col">
+  <div><div class="ghead">監控資料夾<span class="r"><button class="btn plain" id="w_add"><svg class="i" data-i="plus"></svg>加入資料夾</button></span></div>
+   <div class="group" id="w_rows"></div>
+   <div class="gfoot">放進資料夾的新檔案會自動轉檔，結果存在該資料夾的「已轉檔」裡，原檔不會被移動或刪除。檔案複製完成後才會開始，轉檔工廠開著時才會運作。</div></div>
+  <div><div class="ghead">全部完成後</div><div class="seg" id="finish"><button data-v="none">不做事</button><button data-v="sound">提示音</button><button data-v="open">開啟資料夾</button><button data-v="sleep">睡眠</button><button data-v="shutdown">關機</button></div>
+   <div class="gfoot">選「關機」會在完成後倒數 2 分鐘，期間可以取消。睡眠與關機只執行一次，之後自動改回提示音。</div></div>
+ </div></section>
+ </div>
+ <!-- activity -->
+ <section class="activity" id="activity"><div class="ahead"><button class="btn icon" id="amin" title="收合"><svg class="i" data-i="chevdown"></svg></button><b>工作進度</b><span class="mute small" id="qcount"></span>
+  <span class="r"><span class="mute small">完成後</span><select id="finsel"><option value="none">不做事</option><option value="sound">提示音</option><option value="open">開啟資料夾</option><option value="sleep">睡眠</option><option value="shutdown">關機</option></select>
+  <button class="btn plain danger" id="noshut" style="display:none">取消關機</button><button class="btn plain" id="cancelall">全部取消</button><button class="btn plain" id="cleardone">清除已完成</button></span></div>
+  <div class="queue" id="queue"></div></section>
+</div></div>
+<div class="modal" id="modal"><div class="sheet"><h3>支援格式<span class="r"><input id="q" placeholder="搜尋副檔名，例如 heic" style="width:220px"><button class="btn" id="mclose">完成</button></span></h3>
+<table class="ft"><thead><tr><th>類別</th><th>可讀取</th><th>可輸出</th><th>引擎</th><th>備註</th></tr></thead><tbody id="ftb"></tbody></table></div></div>
+<div class="modal" id="rmodal"><div class="sheet" style="width:auto;max-width:94vw"><h3>拖拉框選範圍<span class="r mute small" id="r_info"></span></h3>
+<div style="text-align:center"><div class="stage" id="stage"><img id="simg" draggable="false"><div class="selbox" id="sel" style="display:none"></div></div></div>
+<div style="display:flex;gap:10px;align-items:center;margin-top:14px"><input type="range" id="stime" min="0" max="1000" value="300" style="flex:1"><span class="mute small" id="stimel" style="min-width:70px"></span>
+<button class="btn" id="rcancel">取消</button><button class="btn pri" id="rok">完成</button></div></div></div>
+<div class="toast" id="toast"></div>
+<script>
+/* ---------- icons (24px line set) ---------- */
+const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',plus:'<path d="M12 5v14M5 12h14"/>',x:'<path d="M18 6 6 18M6 6l12 12"/>',
+chev:'<path d="m9 6 6 6-6 6"/>',chevdown:'<path d="m6 9 6 6 6-6"/>',up:'<path d="m6 15 6-6 6 6"/>',down:'<path d="m6 9 6 6 6-6"/>',
+convert:'<path d="M20 11a8 8 0 0 0-14.9-3.9M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.9 3.9M20 20v-4h-4"/>',
+video:'<rect x="2.5" y="6" width="13.5" height="12" rx="2.5"/><path d="m16 10.5 5.5-3v9l-5.5-3"/>',audio:'<path d="M4 10v4M8 6.5v11M12 3.5v17M16 7.5v9M20 10v4"/>',
+image:'<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.8"/><path d="m21 15.5-4.5-4.5L7 20.5"/>',
+pdf:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+disc:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>',cd:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M16.8 7.2A6.5 6.5 0 0 1 18.5 11"/>',
+shield:'<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
+record:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>',download:'<path d="M12 3.5v12M7 10.5l5 5 5-5M5 20.5h14"/>',
+bolt:'<path d="M13 2.5 4.5 14H11l-1 7.5L18.5 10H12z"/>',phone:'<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+aspect:'<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M3 8v8M21 8v8"/>',crop:'<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
+rotate:'<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/>',speed:'<path d="m3.5 6 7.5 6-7.5 6zM12.5 6l8 6-8 6z"/>',
+textmark:'<path d="M5 7.5V5h14v2.5M12 5v14M9 19h6"/>',logo:'<rect x="3" y="4" width="18" height="16" rx="3"/><rect x="12.5" y="12" width="5" height="4.5" rx="1"/>',
+eraser:'<path d="m7 20.5-3.6-3.6a2 2 0 0 1 0-2.8L13.2 4.3a2 2 0 0 1 2.8 0l3.6 3.6a2 2 0 0 1 0 2.8L9.8 20.5zM20.5 20.5H9.8M8.5 9l6.5 6.5"/>',
+captions:'<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M6.5 12h4M13 12h4.5M6.5 15.5h7"/>',
+sparkles:'<path d="M11 3.5 12.9 8.6 18 10.5l-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z"/><path d="m18.5 15 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+music:'<path d="M9 18V5.5l11.5-2V16"/><circle cx="6" cy="18" r="3"/><circle cx="17.5" cy="16" r="3"/>',mute:'<path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
+scissors:'<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
+stabilize:'<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M2.5 9v6M21.5 9v6M9 2.5h6M9 21.5h6"/>',
+sliders:'<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+fade:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>',rewind:'<path d="M11 18.5 3 12l8-6.5zM21 18.5 13 12l8-6.5z"/>',
+frames:'<path d="M4 7.5h3l2-2.5h6l2 2.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>',
+grid:'<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>',
+volume:'<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',pitch:'<path d="M9 3v6a3 3 0 0 0 6 0V3M12 12v9M9 21h6"/>',
+mic:'<rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5M3 3l18 18"/>',wind:'<path d="M3 8h11a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h7"/>',
+silence:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',mix:'<path d="M6 4v5M6 13v7M12 4v11M12 19v1M18 4v1M18 9v11M4 11h4M10 17h4M16 7h4"/>',
+bell:'<path d="M6 8.5a6 6 0 0 1 12 0c0 6.5 3 8 3 8H3s3-1.5 3-8"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>',tag:'<path d="M3 12.2V4a1 1 0 0 1 1-1h8.2l8.6 8.6a1 1 0 0 1 0 1.4l-7.8 7.8a1 1 0 0 1-1.4 0z"/><circle cx="7.5" cy="7.5" r="1.4"/>',
+resize:'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',copyright:'<circle cx="12" cy="12" r="9"/><path d="M14.8 9.5a3.5 3.5 0 1 0 0 5"/>',
+collage:'<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M12 3v18M3 12h9"/>',slideshow:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m10 9 5 3-5 3z"/>',
+gif:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9h18M3 15h18M8 5v4M16 5v4M8 15v4M16 15v4"/>',
+pages:'<rect x="8" y="2.5" width="12" height="15" rx="2"/><path d="M16 21.5H6a2 2 0 0 1-2-2v-12"/>',list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".8"/><circle cx="4.5" cy="12" r=".8"/><circle cx="4.5" cy="18" r=".8"/>',
+lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',unlock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.8"/>',
+archive:'<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+doc:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',book:'<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5zM4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3"/>',
+table:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',cube:'<path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z"/><path d="M3.5 7 12 11.5 20.5 7M12 11.5v10"/>',
+cc:'<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10 10.2a2.5 2.5 0 1 0 0 3.6M17 10.2a2.5 2.5 0 1 0 0 3.6"/>',show:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m10 12 4 0M12 10l2 2-2 2"/>'};
+const svg=(k,cls='i')=>`<svg class="${cls}" viewBox="0 0 24 24">${IC[k]||IC.doc}</svg>`;
+document.querySelectorAll('svg[data-i]').forEach(s=>{s.setAttribute('viewBox','0 0 24 24');s.innerHTML=IC[s.dataset.i]});
+const GC={convert:'var(--blue)',video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',other:'var(--teal)',disc:'var(--brown)',rec:'var(--red)',dl:'var(--cyan)',auto:'var(--gray)'};
+const GI={convert:'convert',video:'video',audio:'audio',image:'image',pdf:'pdf',other:'shield',disc:'disc',rec:'record',dl:'download',auto:'bolt'};
+const tile=(icon,color,size='')=>`<span class="tile ${size}" style="background:${color}">${svg(icon)}</span>`;
+/* ---------- state ---------- */
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let S={},files=[],API,TS=null,tool=null,tfiles=[],TV={},group='video';
+const CAT={video:'影片',audio:'音訊',image:'圖片',pdf:'PDF',office:'文件',doc:'文件',sheet:'試算表',ebook:'電子書',archive:'壓縮檔',subtitle:'字幕',model:'3D'};
+const CATC={video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',doc:'var(--blue)',office:'var(--blue)',sheet:'#1D9A55',ebook:'var(--purple)',archive:'var(--gray)',subtitle:'var(--teal)',model:'var(--orange)'};
+const CATI={video:'video',audio:'audio',image:'image',pdf:'pdf',doc:'doc',office:'doc',sheet:'table',ebook:'book',archive:'archive',subtitle:'cc',model:'cube'};
+const TL=t=>t=='extract'?'解壓縮':t.toUpperCase();let FT=[];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtSize=b=>b>1<<30?(b/(1<<30)).toFixed(1)+' GB':b>1<<20?(b/(1<<20)).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+const fmtT=s=>s==null?'':s<60?s+' 秒':s<3600?Math.floor(s/60)+' 分 '+(s%60)+' 秒':Math.floor(s/3600)+' 小時 '+Math.floor(s%3600/60)+' 分';
+function toast(m,err){const t=$('#toast');t.innerHTML=(err?'':'')+esc(m);t.className='toast on'+(err?' err':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',err?5000:2400)}
+async function call(fn,...a){try{return await API[fn](...a)}catch(e){toast(String(e.message||e).replace(/^.*?Error:\s*/,''),1);throw e}}
+function save(){API&&API.save_settings(S)}
+function setSeg(id,v){$$(id+' button').forEach(b=>b.classList.toggle('on',b.dataset.v==v))}
+const mq=matchMedia('(prefers-color-scheme: dark)');
+function theme(){const t=S.theme||'auto';document.body.classList.toggle('dark',t=='dark'||(t=='auto'&&mq.matches));setSeg('#theme',t)}
+mq.addEventListener('change',theme);$('#theme').onclick=e=>{const v=e.target.dataset.v;if(v){S.theme=v;theme();save()}};
+const sw=(id,on)=>$('#'+id).classList.toggle('on',!!on),isOn=id=>$('#'+id).classList.contains('on');
+/* ---------- navigation ---------- */
+const PAGES={convert:['轉檔','把任何檔案轉成需要的格式'],rec:['螢幕錄影','錄下整個螢幕或指定範圍'],dl:['下載影片','從網站下載影片或音樂'],auto:['自動化','監控資料夾與完成後動作']};
+function navHTML(){if(!TS)return'';const it=(k,name,extra='')=>`<div class="nav ${S.tab==k?'on':''}" data-k="${k}">${tile(GI[k],GC[k])}<span>${name}</span>${extra}</div>`;
+ const cnt=g=>TS.tools.filter(t=>t.group==g).length;
+ return it('convert','轉檔')+'<div class="sb-label">工具</div>'+TS.groups.map(([g,n])=>it(g,n.replace('工具',''),`<span class="cnt">${cnt(g)}</span>`)).join('')
+  +'<div class="sb-label">更多</div>'+it('rec','螢幕錄影','<i class="live" id="recdot"></i>')+it('dl','下載影片')+it('auto','自動化')}
+function renderNav(){$('#nav').innerHTML=navHTML();recUI()}
+$('#nav').onclick=e=>{const n=e.target.closest('.nav');if(n){$('#gsearch').value='';go(n.dataset.k)}};
+function go(k){S.tab=k;const isTool=TS.groups.some(g=>g[0]==k)||k=='search';$$('.page').forEach(p=>p.classList.remove('on'));
+ if(isTool){group=k;$('#p-tools').classList.add('on');const gn=k=='search'?['搜尋結果','']:TS.groups.find(g=>g[0]==k);$('#ptitle').textContent=k=='search'?'搜尋結果':gn[1];$('#psub').textContent=k=='search'?'':`${TS.tools.filter(t=>t.group==k).length} 個工具`;renderTList();
+  const want=(S.tool_by_group||{})[k];const list=visibleTools();pickTool(list.some(t=>t.id==want)?want:(list[0]||{}).id)}
+ else{$('#p-'+k).classList.add('on');$('#ptitle').textContent=PAGES[k][0];$('#psub').textContent=PAGES[k][1];if(k=='rec')recInit();if(k=='auto')autoInit()}
+ if(k!='search'){renderNav();save()}}
+$('#gsearch').oninput=e=>{const q=e.target.value.trim();if(q){S.tab='search';go('search')}else go(group=='search'?'video':group)};
+function visibleTools(){const q=$('#gsearch').value.trim().toLowerCase();return group=='search'?TS.tools.filter(t=>(t.name+t.desc).toLowerCase().includes(q)):TS.tools.filter(t=>t.group==group)}
+/* ---------- convert ---------- */
+function addFiles(list){const have=new Set(files.map(f=>f.path));let n=0;list.forEach(f=>{if(!have.has(f.path)){f.target=f.suggest;files.push(f);n++}});render();if(list.length&&!n)toast('這些檔案已經在清單裡了')}
+window.onDropped=(list,raw)=>{if($('#p-tools').classList.contains('on')&&tool)addToolFiles(raw);else{if(S.tab!='convert')go('convert');addFiles(list);if(!list.length)toast('沒有可以轉換的檔案',1)}};
+function render(){const el=$('#files');
+ el.innerHTML=files.length?files.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'doc',CATC[f.cat]||'var(--gray)','md')}<span class="lab"><span class="nm" title="${esc(f.path)}" style="display:block">${esc(f.name)}</span><small>${CAT[f.cat]||''} · ${fmtSize(f.size)}${f.note?' · <span class="warn">'+esc(f.note)+'</span>':''}</small></span>
+  <span class="val">${f.targets.length?`<span class="mute small">轉成</span><select data-i="${i}" style="width:110px">${f.targets.map(t=>`<option ${t==f.target?'selected':''} value="${t}">${TL(t)}</option>`).join('')}</select>`:`<span class="warn small">${f.note?'不支援':'缺少元件'}</span>`}
+  <button class="btn icon" data-r="${i}" title="移除">${svg('x')}</button></span></div>`).join(''):'<div class="empty">還沒有加入檔案</div>';
+ const all=new Set();files.forEach(f=>f.targets.forEach(t=>all.add(t)));$('#alltarget').innerHTML='<option value="">每個檔案用建議格式</option>'+[...all].map(t=>`<option value="${t}">全部轉成 ${TL(t)}</option>`).join('');
+ const n=files.filter(f=>f.targets.length).length;$('#go').disabled=!n;$('#go').textContent=n>1?`轉檔 ${n} 個檔案`:'開始轉檔'}
+$('#files').addEventListener('change',e=>{if(e.target.dataset.i)files[e.target.dataset.i].target=e.target.value});
+$('#files').addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b){files.splice(+b.dataset.r,1);render()}});
+$('#alltarget').onchange=e=>{const v=e.target.value;files.forEach(f=>{f.target=v&&f.targets.includes(v)?v:f.suggest});render();$('#alltarget').value=v};
+const dz=$('#drop');['dragenter','dragover'].forEach(t=>document.addEventListener(t,e=>{e.preventDefault();dz.classList.add('on')}));['dragleave','drop'].forEach(t=>document.addEventListener(t,e=>{e.preventDefault();if(t=='drop'||!e.relatedTarget)dz.classList.remove('on')}));
+$('#addf').onclick=async()=>addFiles(await call('pick_files'));
+$('#addd').onclick=async()=>{const r=await call('pick_folder','add');if(r)addFiles(r)};
+$('#clr').onclick=()=>{files=[];render()};
+$('#preset').onclick=e=>{if(e.target.dataset.v){S.preset=e.target.dataset.v;setSeg('#preset',S.preset);save()}};
+$('#outmode').onclick=async e=>{const v=e.target.dataset.v;if(!v)return;if(v=='custom'&&!S.out_dir||v=='custom'&&e.target.classList.contains('on')){const p=await call('pick_folder','out');if(p)S.out_dir=p;else if(!S.out_dir)return}S.out_mode=v;outUI();save()};
+$('#outdir').onclick=()=>$('#outmode button[data-v=custom]').click();
+function outUI(){setSeg('#outmode',S.out_mode);$('#outdir').innerHTML=S.out_mode=='custom'?esc(S.out_dir)+'　<span style="color:var(--blue)">更換…</span>':'存在原檔案旁邊，永遠不會覆蓋原檔。'}
+['merge','hw','fastcopy','loudnorm'].forEach(id=>$('#'+id).onclick=()=>{$('#'+id).classList.toggle('on');const k={hw:'hwaccel',fastcopy:'fastcopy',loudnorm:'loudnorm'}[id];if(k){S[k]=isOn(id);save()}});
+$('#go').onclick=async()=>{const opt={preset:S.preset,target_mb:$('#tmb').value,trim_start:$('#ts').value,trim_end:$('#te').value,height:$('#h').value,hwaccel:S.hwaccel,fastcopy:S.fastcopy,loudnorm:S.loudnorm,out_dir:S.out_mode=='custom'?S.out_dir:''};
+ const items=files.filter(f=>f.target&&f.targets.length).map(f=>({path:f.path,target:f.target}));await call('start',items,opt,isOn('merge'));toast(`已加入 ${items.length} 個工作`);files=[];render();poll()};
+/* ---------- activity ---------- */
+$('#queue').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.c)API.cancel(b.dataset.c);if(b.dataset.o)API.reveal(b.dataset.o)};
+$('#cancelall').onclick=()=>API.cancel_all();$('#cleardone').onclick=async()=>{await API.clear_done();lastQ='';poll()};
+$('#amin').onclick=()=>{$('#activity').classList.toggle('min');S.qmin=$('#activity').classList.contains('min');$('#amin').style.transform=S.qmin?'rotate(180deg)':'';save()};
+$('#finsel').onchange=e=>{S.finish=e.target.value;setSeg('#finish',S.finish);save();if(S.finish=='shutdown')toast('全部完成後會倒數 2 分鐘關機')};
+$('#finish').onclick=e=>{const v=e.target.dataset.v;if(v){S.finish=v;setSeg('#finish',v);$('#finsel').value=v;save()}};
+$('#noshut').onclick=async()=>{await API.cancel_shutdown();toast('已取消關機')};
+const SN={queued:'等待中',running:'處理中',done:'完成',error:'失敗',cancelled:'已取消'};
+const KC=j=>j.kind=='rec'?['record','var(--red)']:j.kind=='dl'?['download','var(--cyan)']:j.kind?[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).icon||'sliders',GC[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).group]||'var(--gray)']:['convert','var(--blue)'];
+let lastQ='',busy=false,recState={};
+async function poll(){const r=await API.status();const js=r.jobs;recState=r.rec||{};busy=js.some(j=>j.state=='queued'||j.state=='running');recUI();$('#noshut').style.display=r.shutdown?'':'none';
+ if(S.finish!==undefined&&$('#finsel').value!=S.finish)$('#finsel').value=S.finish;
+ const key=JSON.stringify(js);if(key==lastQ)return;lastQ=key;const act=js.filter(j=>j.state=='queued'||j.state=='running').length;
+ $('#qcount').textContent=act?`${act} 個進行中`:js.length?'全部完成':'';
+ $('#queue').innerHTML=js.length?js.slice().reverse().map(j=>{const rec=j.kind=='rec'&&j.state=='running';const [ic,col]=KC(j);
+  const title=j.kind=='dl'?esc(j.label.replace(/^下載：/,'')||j.name):j.kind=='rec'?'螢幕錄影':`${esc(j.name)}<span class="mute"> → ${esc(j.label||TL(j.target))}</span>`;
+  const sub=j.state=='running'?(rec?`<span class="err">● ${esc(j.speed)}</span>　${esc(j.msg)}`:[`${(j.progress*100).toFixed(0)}%`,j.speed,j.eta!=null&&j.progress>0.01?'剩 '+fmtT(j.eta):'',j.encoder].filter(Boolean).map(esc).join('　'))
+   :j.state=='done'?`<span class="ok">完成</span>　${j.elapsed} 秒${j.encoder?'　'+esc(j.encoder):''}`:j.state=='error'?`<span class="err">${esc(j.msg)}</span>`:SN[j.state];
+  return `<div class="q ${j.state}">${tile(ic,col,'md')}<div style="min-width:0"><div class="nm t" title="${esc(j.output||j.name)}">${title}</div><div class="s" title="${esc(j.state=='error'?j.msg:j.encoder)}">${sub}</div>${j.state=='running'&&!rec||j.state=='queued'?`<div class="prog"><i style="width:${(j.progress*100).toFixed(1)}%"></i></div>`:''}</div>
+  <div>${j.state=='queued'||j.state=='running'?`<button class="btn plain${rec?' danger':''}" data-c="${j.id}">${rec?'停止':'取消'}</button>`:j.state=='done'&&j.output?`<button class="btn plain" data-o="${esc(j.output)}">顯示位置</button>`:''}</div></div>`}).join(''):'<div class="empty" style="padding:14px">沒有工作</div>'}
+let tick=0;setInterval(()=>{tick++;if(API&&(busy||recState.rec||tick%4==0))poll()},700);
+/* ---------- tools ---------- */
+const NEW=new Set(['v_social','v_fill','v_autosub','x_privacy','i_collage','v_frames','i_slideshow']);
+function renderTList(){const list=visibleTools();const col=g=>GC[g];
+ $('#tlist').innerHTML=list.length?list.map(t=>`<div class="row ic click ${tool&&tool.id==t.id?'on':''}" data-t="${t.id}">${tile(t.icon,col(t.group),'md')}<span class="lab"><span style="display:flex;gap:6px;align-items:center">${esc(t.name)}${NEW.has(t.id)?'<span class="badge">新</span>':''}</span><small>${esc(t.desc)}</small></span><span class="chev">${svg('chev')}</span></div>`).join('')
+ :'<div class="empty">找不到符合的工具</div>'}
+$('#tlist').onclick=e=>{const r=e.target.closest('[data-t]');if(r)pickTool(r.dataset.t)};
+function pickTool(id){if(!id)return;const keep=tool&&tfiles.length?tfiles:[];tool=TS.tools.find(t=>t.id==id);S.tool_by_group=S.tool_by_group||{};if(group!='search'){S.tool_by_group[group]=id;save()}
+ tfiles=keep.filter(f=>tool.accept.includes(f.cat));TV=Object.assign({},...tool.fields.map(f=>({[f.k]:f.default})),(S.tool_opts||{})[id]||{});
+ $('#t_tile').outerHTML=`<div class="tile lg" id="t_tile" style="background:${GC[tool.group]}">${svg(tool.icon)}</div>`;$('#t_name').textContent=tool.name;$('#t_desc').textContent=tool.desc;
+ $$('#tlist .row').forEach(r=>r.classList.toggle('on',r.dataset.t==id));renderTFiles();renderForm()}
+const ACC={video:'影片',audio:'音訊',image:'圖片',pdf:'PDF',disc:'光碟'};
+async function addToolFiles(paths){if(!paths||!paths.length)return;if(tool.accept.includes('disc')){tfiles=[{path:paths[0],name:paths[0],cat:'disc',size:0}];renderTFiles();return}
+ const got=await call('tool_files',paths,tool.id);const have=new Set(tfiles.map(f=>f.path));got.forEach(f=>{if(!have.has(f.path))tfiles.push(f)});
+ if(!got.length)toast(`這個工具只能用在${tool.accept.map(a=>ACC[a]).join('、')}`,1);renderTFiles()}
+async function renderTFiles(){const disc=tool.accept.includes('disc');
+ $('#t_fhead').innerHTML=(disc?'來源':'檔案')+'<span class="r">'+(disc?`<select id="t_drv" style="width:190px;padding-top:3px;padding-bottom:3px"><option value="">選擇光碟機…</option></select><button class="btn plain" id="t_dir">選擇資料夾</button>`
+  :`<button class="btn plain" id="t_addf">${svg('plus')}加入檔案</button><button class="btn plain" id="t_addd">加入資料夾</button>${tfiles.length?'<button class="btn plain" id="t_clr">全部移除</button>':''}`)+'</span>';
+ $('#t_list').innerHTML=tfiles.length?tfiles.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'disc',CATC[f.cat]||GC.disc,'md')}<span class="lab"><span class="nm" style="display:block" title="${esc(f.path)}">${esc(f.name)}</span>${f.size?`<small>${fmtSize(f.size)}</small>`:''}</span>
+  <span class="val">${tool.together&&tfiles.length>1?`<span class="order"><button class="btn icon" data-u="${i}" title="上移">${svg('up')}</button><button class="btn icon" data-d="${i}" title="下移">${svg('down')}</button></span>`:''}<button class="btn icon" data-r="${i}" title="移除">${svg('x')}</button></span></div>`).join('')
+  :`<div class="empty">${disc?'放入光碟後從上方選擇光碟機，<br>或選擇硬碟裡的 VIDEO_TS／BDMV 資料夾。':'將'+tool.accept.map(a=>ACC[a]).join('、')+'拖到這裡，或按「加入檔案」。'}</div>`;
+ $('#t_fnote').textContent=tool.together&&!disc?'多個檔案會依清單順序合成一個，可以用箭頭調整順序。':'';
+ if(disc){const dv=await API.drives();const s=$('#t_drv');s.innerHTML='<option value="">'+(dv.length?'選擇光碟機…':'找不到光碟機')+'</option>'+dv.map(d=>`<option value="${esc(d.path)}">${esc(d.label)}</option>`).join('');s.onchange=()=>{if(s.value){tfiles=[{path:s.value,name:s.selectedOptions[0].text,cat:'disc'}];renderTFiles()}};
+  $('#t_dir').onclick=async()=>{const p=await call('pick_folder','out');if(p){tfiles=[{path:p,name:p,cat:'disc'}];renderTFiles()}}}
+ else{$('#t_addf').onclick=async()=>{const r=await call('pick_files');addToolFiles(r.map(x=>x.path))};$('#t_addd').onclick=async()=>{const p=await call('pick_folder','out');if(p)addToolFiles([p])};if($('#t_clr'))$('#t_clr').onclick=()=>{tfiles=[];renderTFiles()}}
+ updGo()}
+$('#t_list').onclick=e=>{const b=e.target.closest('button');if(!b)return;const D=b.dataset;
+ if(D.r!==undefined){tfiles.splice(+D.r,1)}else if(D.u!==undefined&&+D.u>0){const i=+D.u;[tfiles[i-1],tfiles[i]]=[tfiles[i],tfiles[i-1]]}else if(D.d!==undefined&&+D.d<tfiles.length-1){const i=+D.d;[tfiles[i+1],tfiles[i]]=[tfiles[i],tfiles[i+1]]}else return;renderTFiles()};
+function shown(f){if(!f.show)return true;return Object.entries(f.show).every(([k,v])=>Array.isArray(v)?v.includes(String(TV[k])):String(TV[k])==String(v))}
+function renderForm(){const fs=tool.fields.filter(shown);$('#t_optwrap').style.display=fs.length?'':'none';
+ $('#t_form').innerHTML=fs.map(f=>{const v=TV[f.k];let inp='';
+  if(f.type=='check')return `<div class="row"><span class="lab">${esc(f.label)}</span><div class="sw ${v?'on':''}" data-k="${f.k}"></div></div>`;
+  if(f.type=='select')inp=`<select data-k="${f.k}">${f.options.map(([a,b])=>`<option value="${esc(a)}" ${String(a)==String(v)?'selected':''}>${esc(b)}</option>`).join('')}</select>`;
+  else if(f.type=='number')inp=`<input type="number" data-k="${f.k}" value="${esc(v)}" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} step="${f.step||'any'}">`;
+  else if(f.type=='color')inp=`<input type="color" data-k="${f.k}" value="${esc(v)}">`;
+  else if(f.type=='file')inp=`<span class="fpick"><span class="nm" title="${esc(v)}">${v?esc(v.split(/[\\/]/).pop()):'未選擇'}</span><button class="btn tint" data-file="${f.k}">選擇…</button></span>`;
+  else if(f.type=='rect')inp=`<span class="fpick"><span class="nm">${v?esc(v.split(',').slice(2).join(' × '))+' 像素':'尚未框選'}</span><button class="btn tint" data-rect="${f.k}">在畫面上框選</button></span>`;
+  else inp=`<input data-k="${f.k}" value="${esc(v)}" placeholder="${esc(f.placeholder||'')}">`;
+  return `<div class="row"><span class="lab">${esc(f.label)}</span><span class="val">${inp}</span></div>`}).join('');
+ let note='';if(tool.id=='v_autosub')note=TS.whisper?'第一次使用會自動下載辨識模型，之後完全離線。中文影片建議用「準確」。':'<span class="warn">目前的 FFmpeg 沒有語音辨識功能。</span>';
+ if(['i_watermark','v_wm_text'].includes(tool.id)&&!TS.font)note='<span class="warn">找不到中文字型。</span>';
+ if(tool.id=='a_vocal')note='原理是消去左右聲道相同的聲音，對多數流行歌有效；現場錄音或單聲道效果有限。';
+ if(tool.id=='v_stab')note='防手震需要先完整分析一次影片，時間約為一般轉檔的兩倍。';
+ if(tool.id=='x_privacy')note='JPG、PNG 直接移除資訊、不重新壓縮；影片與音訊不重新編碼。';
+ $('#t_note').innerHTML=note;updGo()}
+function updGo(){const b=$('#t_go');const n=tfiles.length;const disc=tool.accept.includes('disc');b.disabled=!n||(tool.together&&n<2&&!['i_slideshow','i_gif'].includes(tool.id))||(tool.id=='v_autosub'&&!TS.whisper);
+ b.textContent=disc?'開始':tool.together?(n>1?`合成 ${n} 個檔案`:'開始'):n>1?`處理 ${n} 個檔案`:'開始'}
+$('#t_form').addEventListener('change',e=>{const k=e.target.dataset.k;if(!k)return;TV[k]=e.target.value;if(tool.fields.some(f=>f.show&&k in f.show))renderForm()});
+$('#t_form').addEventListener('input',e=>{const k=e.target.dataset.k;if(k&&e.target.tagName!='SELECT')TV[k]=e.target.value});
+$('#t_form').addEventListener('click',async e=>{const t=e.target.closest('.sw,button');if(!t)return;
+ if(t.classList.contains('sw')){t.classList.toggle('on');TV[t.dataset.k]=t.classList.contains('on');if(tool.fields.some(f=>f.show&&t.dataset.k in f.show))renderForm();return}
+ if(t.dataset.file){const f=tool.fields.find(x=>x.k==t.dataset.file);const p=await call('pick_file',f.filter||'');if(p){TV[f.k]=p;renderForm()}}
+ if(t.dataset.rect){if(!tfiles.length){toast('請先加入檔案',1);return}openRect(tfiles[0].path,t.dataset.rect)}});
+$('#t_go').onclick=async()=>{const fs=tool.fields.filter(shown);for(const f of fs){if(f.type=='file'&&!TV[f.k]&&!/選填/.test(f.label)){toast(`請先選擇「${f.label}」`,1);return}if(f.type=='rect'&&!TV[f.k]){toast('請先在畫面上框選範圍',1);return}}
+ const p={};tool.fields.forEach(f=>{if(shown(f))p[f.k]=TV[f.k]});const ids=await call('run_tool',tool.id,tfiles.map(f=>f.path),p);S.tool_opts=S.tool_opts||{};S.tool_opts[tool.id]=Object.fromEntries(Object.entries(p).filter(([k])=>k!='rect'));
+ toast(`已加入 ${ids.length} 個工作`);if(!tool.accept.includes('disc'))tfiles=[];renderTFiles();poll()};
+/* ---------- rectangle picker ---------- */
+let RP=null;
+async function openRect(path,key){$('#rmodal').classList.add('on');$('#sel').style.display='none';RP={path,key,r:null};await loadFrame(null)}
+async function loadFrame(t){const p=await call('preview',RP.path,t);RP.w=p.w;RP.h=p.h;RP.dur=p.dur;$('#simg').src=p.src;
+ $('#stime').style.visibility=p.dur?'visible':'hidden';$('#stimel').textContent=p.dur?fmtT(Math.round(t??p.dur*0.3)):'';$('#r_info').textContent=`原始尺寸 ${p.w} × ${p.h}`;
+ const cur=TV[RP.key];if(cur&&!RP.r){const [x,y,w,h]=cur.split(',').map(Number);RP.r={x,y,w,h};setTimeout(drawSel,60)}}
+$('#stime').onchange=e=>loadFrame(RP.dur*e.target.value/1000);
+function drawSel(){const r=RP.r,img=$('#simg'),s=$('#sel');if(!r){s.style.display='none';return}const k=img.clientWidth/RP.w;
+ Object.assign(s.style,{display:'block',left:r.x*k+'px',top:r.y*k+'px',width:r.w*k+'px',height:r.h*k+'px'});$('#r_info').textContent=`原始尺寸 ${RP.w} × ${RP.h}　·　選取 ${r.w} × ${r.h}`}
+(()=>{const st=$('#stage');let a=null;
+ st.onmousedown=e=>{const b=$('#simg').getBoundingClientRect();a={x:e.clientX-b.left,y:e.clientY-b.top,b}};
+ window.addEventListener('mousemove',e=>{if(!a)return;const k=RP.w/a.b.width;const cx=Math.max(0,Math.min(a.b.width,e.clientX-a.b.left)),cy=Math.max(0,Math.min(a.b.height,e.clientY-a.b.top));
+  RP.r={x:Math.round(Math.min(a.x,cx)*k),y:Math.round(Math.min(a.y,cy)*k),w:Math.round(Math.abs(cx-a.x)*k),h:Math.round(Math.abs(cy-a.y)*k)};drawSel()});
+ window.addEventListener('mouseup',()=>a=null)})();
+$('#rcancel').onclick=()=>$('#rmodal').classList.remove('on');
+$('#rok').onclick=()=>{const r=RP.r;if(!r||r.w<4||r.h<4){toast('請在畫面上拖拉出一個範圍',1);return}TV[RP.key]=[r.x,r.y,r.w,r.h].join(',');$('#rmodal').classList.remove('on');renderForm()};
+/* ---------- recorder ---------- */
+let recLoaded=false;
+async function recInit(){if(recLoaded)return;recLoaded=true;const r=await API.rec_info();const o=r.opts||{};
+ $('#r_mon').innerHTML=r.monitors.map(m=>`<option value="${m.idx}">${esc(m.label)}</option>`).join('');
+ $('#r_audio').innerHTML=r.audio.length?r.audio.map(a=>`<div class="row"><span class="lab nm">${esc(a)}</span><div class="sw ${(o.audio||[]).includes(a)?'on':''}" data-a="${esc(a)}"></div></div>`).join(''):'<div class="empty" style="padding:16px">找不到麥克風或錄音裝置，將只錄畫面。</div>';
+ if(o.fps)$('#r_fps').value=o.fps;if(o.monitor!=null)$('#r_mon').value=o.monitor;if(o.region){$('#r_area').value='custom';$('#r_region').value=o.region}$('#r_regwrap').style.display=o.region?'':'none';
+ sw('r_mouse',o.mouse!==false);sw('r_min',o.minimize!==false)}
+$('#r_audio').onclick=e=>{const t=e.target.closest('.sw');if(t)t.classList.toggle('on')};['r_mouse','r_min','d_pl','d_subs','d_thumb'].forEach(id=>$('#'+id).onclick=()=>$('#'+id).classList.toggle('on'));
+$('#r_area').onchange=e=>$('#r_regwrap').style.display=e.target.value?'':'none';
+$('#recbtn').onclick=async()=>{if(recState.rec){await call('rec_stop');toast('錄影已儲存');poll();return}
+ const region=$('#r_area').value?$('#r_region').value.trim():'';if($('#r_area').value&&!/^\d+,\d+,\d+,\d+$/.test(region)){toast('區域格式：x,y,寬,高（例如 0,0,1280,720）',1);return}
+ const o={monitor:+$('#r_mon').value,fps:+$('#r_fps').value,region,mouse:isOn('r_mouse'),minimize:isOn('r_min'),audio:$$('#r_audio .sw.on').map(i=>i.dataset.a)};
+ $('#recbtn').disabled=true;$('#recsub').textContent='準備中…';try{await call('rec_start',o)}finally{$('#recbtn').disabled=false}poll()};
+function recUI(){const on=!!recState.rec;const d=$('#recdot');if(d)d.classList.toggle('on',on);const b=$('#recbtn');b.classList.toggle('stop',on);
+ const s=recState.sec||0;$('#rectime').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;$('#rectime').style.color=on?'var(--red)':'';
+ if(on)$('#recsub').innerHTML=`錄影中 · ${fmtSize(recState.size||0)}<br>按 <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F9</kbd> 或按鈕停止`;
+ else if(!b.disabled)$('#recsub').innerHTML='開始後視窗會自動縮小，影片存在「影片」資料夾<br>隨時按 <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F9</kbd> 停止'}
+/* ---------- downloader ---------- */
+$('#d_paste').onclick=async()=>{try{const t=await navigator.clipboard.readText();$('#d_urls').value=($('#d_urls').value.trim()+'\n'+t).trim()}catch(e){toast('無法讀取剪貼簿，請按 Ctrl+V 貼上',1)}};
+$('#d_dirbtn').onclick=async()=>{const p=await call('pick_folder','out');if(p){S.dl=S.dl||{};S.dl.out_dir=p;$('#d_dir').textContent=p;save()}};
+$('#d_go').onclick=async()=>{const o={quality:$('#d_q').value,playlist:isOn('d_pl'),subs:isOn('d_subs'),thumb:isOn('d_thumb'),out_dir:(S.dl||{}).out_dir||''};
+ const ids=await call('dl_start',$('#d_urls').value,o);toast(`開始下載 ${ids.length} 個網址`);$('#d_urls').value='';poll()};
+$('#d_upd').onclick=async()=>{$('#d_msg').textContent='更新中…';try{$('#d_msg').textContent=await call('dl_update')}catch(e){$('#d_msg').textContent=''}};
+/* ---------- automation ---------- */
+let W=[];const WT=[['auto','自動建議格式'],['mp4','MP4'],['mp3','MP3'],['m4a','M4A'],['jpg','JPG'],['webp','WebP'],['png','PNG'],['pdf','PDF'],['docx','Word'],['epub','EPUB'],['extract','解壓縮']];
+async function autoInit(){W=await API.watch_get();wRender();setSeg('#finish',S.finish||'sound')}
+function wRender(){$('#w_rows').innerHTML=W.length?W.map((r,i)=>`<div class="row ic">${tile('folder','var(--blue)','md')}<span class="lab"><span class="nm" style="display:block" title="${esc(r.folder)}">${esc(r.folder.split(/[\\/]/).filter(Boolean).pop()||r.folder)}</span><small>${esc(r.folder)}</small></span>
+ <span class="val"><select data-i="${i}" data-k="target" style="width:130px">${WT.map(([a,b])=>`<option value="${a}" ${r.target==a?'selected':''}>${b}</option>`).join('')}</select>
+ <select data-i="${i}" data-k="preset" style="width:120px">${[['','目前品質'],['high','高品質'],['balanced','均衡'],['small','小檔案']].map(([a,b])=>`<option value="${a}" ${(r.preset||'')==a?'selected':''}>${b}</option>`).join('')}</select>
+ <label class="mute small" style="display:flex;gap:5px;align-items:center;white-space:nowrap"><input type="checkbox" data-i="${i}" data-k="recursive" ${r.recursive?'checked':''}>子資料夾</label>
+ <div class="sw ${r.on!==false?'on':''}" data-i="${i}" data-k="on" title="啟用"></div><button class="btn icon" data-del="${i}" title="移除">${svg('x')}</button></span></div>`).join('')
+ :'<div class="empty">還沒有監控任何資料夾</div>'}
+$('#w_add').onclick=async()=>{const p=await call('pick_folder','out');if(!p)return;if(W.some(r=>r.folder==p)){toast('這個資料夾已經在監控中');return}W.push({folder:p,target:'auto',preset:'',recursive:false,on:true});await API.watch_set(W);wRender();toast('開始監控，之後放進去的檔案會自動轉檔')};
+$('#w_rows').addEventListener('change',async e=>{const t=e.target,i=t.dataset.i;if(i==null)return;W[i][t.dataset.k]=t.type=='checkbox'?t.checked:t.value;await API.watch_set(W)});
+$('#w_rows').addEventListener('click',async e=>{const t=e.target.closest('.sw,[data-del]');if(!t)return;if(t.classList.contains('sw')){t.classList.toggle('on');W[t.dataset.i].on=t.classList.contains('on');await API.watch_set(W)}if(t.dataset.del){W.splice(+t.dataset.del,1);await API.watch_set(W);wRender()}});
+/* ---------- formats ---------- */
+function ft(q){q=(q||'').toLowerCase().replace('.','');$('#ftb').innerHTML=FT.filter(r=>!q||r.cat.includes(q)||r.inputs.concat(r.outputs).some(e=>e.includes(q))).map(r=>`<tr><td><span class="chip" style="background:${CATC[r.key]||'var(--gray)'}">${r.cat}</span></td><td class="fx">${r.inputs.join(' ')}</td><td class="fx">${r.outputs.map(TL).join(' ')||'—'}</td><td>${r.engine}</td><td class="warn">${r.note}</td></tr>`).join('')||'<tr><td colspan=5 class="empty">找不到這個格式</td></tr>'}
+$('#fmtbtn').onclick=async()=>{if(!FT.length)FT=await API.formats();ft($('#q').value);$('#modal').classList.add('on');$('#q').focus()};
+$('#mclose').onclick=()=>$('#modal').classList.remove('on');$$('.modal').forEach(m=>m.onclick=e=>{if(e.target==m)m.classList.remove('on')});
+$('#q').oninput=e=>ft(e.target.value);
+document.addEventListener('keydown',e=>{if(e.key=='Escape')$$('.modal').forEach(m=>m.classList.remove('on'));if((e.ctrlKey||e.metaKey)&&e.key=='f'){e.preventDefault();$('#gsearch').focus()}});
+/* ---------- boot ---------- */
+window.addEventListener('pywebviewready',async()=>{API=window.pywebview.api;const r=await API.init();S=r.settings;TS=r.tools;if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();setSeg('#preset',S.preset);outUI();
+ sw('hw',S.hwaccel);sw('fastcopy',S.fastcopy!==false);sw('loudnorm',S.loudnorm);$('#finsel').value=S.finish||'sound';
+ if(S.qmin){$('#activity').classList.add('min');$('#amin').style.transform='rotate(180deg)'}
+ if((S.dl||{}).out_dir)$('#d_dir').textContent=S.dl.out_dir;if(S.dl){if(S.dl.quality)$('#d_q').value=S.dl.quality;sw('d_subs',S.dl.subs);sw('d_pl',S.dl.playlist);if(S.dl.thumb===false)sw('d_thumb',false)}
+ if(!r.ytdlp){$('#d_go').disabled=true;$('#d_msg').innerHTML='<span class="warn">缺少下載元件（tools\\yt-dlp.exe）</span>'}
+ const hwc=hw=>$('#hwchip').innerHTML=`<i style="${hw&&!hw.length?'background:var(--gray)':''}"></i>${hw==null?'偵測顯示卡中…':hw.length?'硬體加速：'+hw.join('、'):'使用 CPU 轉檔'}`;
+ const hp=async()=>{const hw=await API.hwinfo();hwc(hw);if(hw==null)setTimeout(hp,800)};hp();
+ const st=await API.startup_files();const valid=['convert','rec','dl','auto',...TS.groups.map(g=>g[0])];
+ go(st.length?'convert':valid.includes(S.tab)?S.tab:'convert');if(st.length)addFiles(st);render();poll()});
+render();
+</script></body></html>

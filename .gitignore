@@ -1,0 +1,25 @@
+# 轉檔工廠：只上傳原始碼與文件（白名單）
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/使用說明.md
+!/授權說明.md
+!/暫停自動同步.cmd
+!/恢復自動同步.cmd
+!/autosync/
+!/_build/
+/_build/*
+!/_build/src/
+!/_build/build.ps1
+!/_build/setup.iss
+!/_build/ZDGC.spec
+!/_build/logo.ico
+!/_build/logo_512.png
+!/_build/shot.ps1
+!/_build/精簡tools.ps1
+__pycache__/
+*.pyc
+settings.json
+*.log
+autosync/state/

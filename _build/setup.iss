@@ -26,7 +26,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\轉檔工廠.exe
-LicenseFile=E:\轉檔工廠\授權說明.md
+LicenseFile=E:\轉檔工廠\使用授權條款.md
 [Languages]
 Name: "cht"; MessagesFile: "compiler:Languages\ChineseTraditional.isl"
 [Tasks]
@@ -39,6 +39,7 @@ Source: "E:\轉檔工廠\_internal\*"; DestDir: "{app}\_internal"; Flags: ignore
 Source: "E:\轉檔工廠\tools\*"; DestDir: "{app}\tools"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "E:\轉檔工廠\使用說明.md"; DestDir: "{app}"
 Source: "E:\轉檔工廠\授權說明.md"; DestDir: "{app}"
+Source: "E:\轉檔工廠\使用授權條款.md"; DestDir: "{app}"
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\轉檔工廠.exe"
 Name: "{group}\解除安裝 {#AppName}"; Filename: "{uninstallexe}"

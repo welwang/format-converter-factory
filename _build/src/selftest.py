@@ -60,6 +60,8 @@ def main(arg=None):
         if E.PANDOC:
             E.run([E.PANDOC, S('d.md'), '-o', S('d.docx')]); E.run([E.PANDOC, S('d.md'), '-o', S('b.epub'), '--metadata', 'title=測試'])
         if E.SEVENZIP: E.run([E.SEVENZIP, 'a', '-bso0', S('x.zip'), S('t.txt'), S('d.md')])
+        for cand in (os.path.join(E.base_dir(), '_build', 'samples', 'i.heic'), os.path.join(os.path.dirname(E.base_dir()), 'samples', 'i.heic')):
+            if os.path.isfile(cand): shutil.copy(cand, S('i.heic')); break
         open(S('m.stl'), 'w').write('solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n')
 
     eng = E.Engine(1, 1); results = []
@@ -77,7 +79,7 @@ def main(arg=None):
     conv = [(['v.mp4'], 'mkv', {}), (['v.mp4'], 'mp4', dict(height=480)), (['v.mp4'], 'webm', {}), (['v.mp4'], 'gif', dict(trim_end=3)),
             (['v.mp4'], 'mp3', {}), (['v.mp4'], 'mp4', dict(target_mb=1)), (['v.mkv'], 'mp4', {}), (['hdr.mov'], 'mp4', dict(fastcopy=False)),
             (['a.wav'], 'flac', {}), (['a.wav'], 'opus', {}), (['a.wav'], 'mp3', dict(loudnorm=True)), (['a96.m4a'], 'mp3', {}),
-            (['alpha.png'], 'jpg', {}), (['alpha.png'], 'webp', {}), (['alpha.png'], 'avif', {}), (['alpha.png'], 'ico', {}), (['img0.jpg'], 'jpg', dict(target_mb=0.05)),
+            (['i.heic'], 'jpg', {}), (['alpha.png'], 'jpg', {}), (['alpha.png'], 'webp', {}), (['alpha.png'], 'avif', {}), (['alpha.png'], 'ico', {}), (['img0.jpg'], 'jpg', dict(target_mb=0.05)),
             (['img0.jpg', 'img1.jpg'], 'pdf', {}), (['multi.pdf'], 'png', {}), (['multi.pdf'], 'pdf', dict(preset='small')), (['multi.pdf'], 'txt', {}),
             (['d.md'], 'docx', {}), (['d.md'], 'html', {}), (['d.md'], 'pdf', {}), (['t.txt'], 'pdf', {}), (['d.docx'], 'pdf', {}), (['s.csv'], 'xlsx', {}),
             (['b.epub'], 'mobi', {}), (['b.epub'], 'docx', {}), (['x.zip'], 'extract', {}), (['x.zip'], '7z', {}), (['sub.srt'], 'vtt', {}), (['m.stl'], 'glb', {})]

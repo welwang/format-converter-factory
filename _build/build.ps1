@@ -2,8 +2,8 @@
 $ErrorActionPreference='Continue'
 $B='E:\轉檔工廠\_build'; $R='E:\轉檔工廠'; cd $B
 .\venv\Scripts\pyinstaller --noconfirm --windowed --onedir --name ZDGC --icon logo.ico --add-data "src\ui;ui" --add-data "src\zhdict;zhdict" --hidden-import tools --hidden-import capture --hidden-import zhconv --hidden-import selftest `
-  --collect-all pillow_heif --collect-all pypdfium2 --collect-all rawpy --collect-all psd_tools --collect-all resvg_py --collect-all trimesh `
-  --collect-submodules webview --exclude-module tkinter --exclude-module matplotlib --exclude-module setuptools --exclude-module pip --exclude-module test --distpath dist --workpath work --exclude-module _test src\app.py 2>&1 | select -last 1
+  --collect-all pypdfium2 --collect-all rawpy --collect-all psd_tools --collect-all resvg_py --collect-all trimesh `
+  --collect-submodules webview --exclude-module pillow_heif --exclude-module tkinter --exclude-module matplotlib --exclude-module setuptools --exclude-module pip --exclude-module test --distpath dist --workpath work --exclude-module _test src\app.py 2>&1 | select -last 1
 if(Test-Path "$R\_internal"){Remove-Item -Recurse -Force "$R\_internal"}
 Copy-Item -Recurse dist\ZDGC\_internal $R; Copy-Item dist\ZDGC\ZDGC.exe "$R\轉檔工廠.exe" -Force
 
@@ -39,6 +39,6 @@ Get-Once 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' "$T\MicrosoftEdgeWe
 $P = "$R\輸出\轉檔工廠_免安裝版.zip"
 if (Test-Path $P) { Remove-Item $P }
 Push-Location $R
-& "$T\7z.exe" a -tzip -mx=5 -mmt=on -bso0 -bsp1 $P "轉檔工廠.exe" "_internal" "tools" "使用說明.md" "授權說明.md" -xr!logs -xr!settings.json -xr!hw_cache.json -xr!watch_state.json
+& "$T\7z.exe" a -tzip -mx=5 -mmt=on -bso0 -bsp1 $P "轉檔工廠.exe" "_internal" "tools" "使用說明.md" "授權說明.md" "使用授權條款.md" -xr!logs -xr!settings.json -xr!hw_cache.json -xr!watch_state.json
 Pop-Location
 Write-Host "完成：$R\轉檔工廠.exe（可直接執行）、$P（免安裝版）。安裝程式請用 Inno Setup 編譯 setup.iss。"

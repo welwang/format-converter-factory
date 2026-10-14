@@ -160,6 +160,23 @@ def log_error(j):
     err = (getattr(j, '_err', '') or '').strip()
     log(f'FAIL {j.tool or j.target} {j.files} -> {j.output}\n  msg: {j.msg}\n  opt: {j.opt}\n  stderr: ' + err[-1500:].replace('\n', '\n    '))
 
+def decode_with_ffmpeg(path):
+    """HEIC / HEIF (iPhone photos, including 512x512 tile grids) decoded by the separate ffmpeg program,
+    so no HEVC/x265 library is ever loaded into 轉檔工廠 itself."""
+    from PIL import Image
+    import io
+    if not FFMPEG: raise RuntimeError('找不到 ffmpeg，無法讀取 HEIC')
+    info = run([FFMPEG, '-hide_banner', '-i', path]).stderr
+    mp = ['-map', '0:g:0'] if 'Tile Grid' in info or 'tile_grid' in info.lower() else ['-map', '0:v:0']
+    r = subprocess.run([FFMPEG, '-hide_banner', '-v', 'error', '-i', path] + mp + ['-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'image2pipe', '-c:v', 'png', '-'],
+                       capture_output=True, creationflags=NOWIN)
+    if r.returncode != 0 and mp[1] != '0:v:0':
+        r = subprocess.run([FFMPEG, '-hide_banner', '-v', 'error', '-i', path, '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'image2pipe', '-c:v', 'png', '-'],
+                           capture_output=True, creationflags=NOWIN)
+    if r.returncode != 0 or not r.stdout:
+        raise RuntimeError('無法讀取這張 HEIC 照片：' + r.stderr.decode('utf-8', 'replace').strip().splitlines()[-1:][0][:150] if r.stderr else '無法讀取這張 HEIC 照片')
+    im = Image.open(io.BytesIO(r.stdout)); im.load(); return im
+
 def flatten(im, bg=(255, 255, 255)):
     """RGB copy with transparency composited onto white (plain convert('RGB') turns it black)."""
     if im.mode in ('RGBA', 'LA') or (im.mode == 'P' and 'transparency' in im.info):
@@ -646,10 +663,13 @@ class Engine:
             import resvg_py, io
             data = resvg_py.svg_to_bytes(svg_path=path)
             return Image.open(io.BytesIO(bytes(data)))
+        if ext in ('heic', 'heif'):
+            return decode_with_ffmpeg(path)
         try:
-            import pillow_heif; pillow_heif.register_heif_opener()
-        except Exception: pass
-        im = Image.open(path); im.load(); return im
+            im = Image.open(path); im.load(); return im
+        except Exception:
+            if ext == 'avif': return decode_with_ffmpeg(path)      # Pillow without AVIF support
+            raise
 
     def _image(self, j):
         from PIL import Image, ImageOps

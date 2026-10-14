@@ -134,7 +134,7 @@ class Api:
             except Exception: self.reveal(path)
         return True
     def open_doc(self, name):
-        p = os.path.join(E.base_dir(), {'license': '授權說明.md', 'guide': '使用說明.md'}.get(name, ''))
+        p = os.path.join(E.base_dir(), {'license': '授權說明.md', 'guide': '使用說明.md', 'eula': '使用授權條款.md'}.get(name, ''))
         if os.path.isfile(p):
             try: os.startfile(p)
             except Exception: self.reveal(p)

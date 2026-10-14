@@ -6,8 +6,6 @@ datas = [('src/ui', 'ui'), ('src/zhdict', 'zhdict')]
 binaries = []
 hiddenimports = ['tools', 'capture', 'zhconv', 'selftest']
 hiddenimports += collect_submodules('webview')
-tmp_ret = collect_all('pillow_heif')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pypdfium2')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('rawpy')
@@ -29,7 +27,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'setuptools', 'pip', 'test'],
+    excludes=['pillow_heif', 'tkinter', 'matplotlib', 'setuptools', 'pip', 'test'],
     noarchive=False,
     optimize=0,
 )

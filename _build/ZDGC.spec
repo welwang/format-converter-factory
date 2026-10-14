@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('src/ui', 'ui'), ('src/zhdict', 'zhdict')]
 binaries = []
-hiddenimports = ['tools', 'capture', 'zhconv']
+hiddenimports = ['tools', 'capture', 'zhconv', 'selftest']
 hiddenimports += collect_submodules('webview')
 tmp_ret = collect_all('pillow_heif')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

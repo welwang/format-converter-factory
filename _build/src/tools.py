@@ -44,7 +44,7 @@ TOOLS = [
         F('sub', '字幕檔', 'file', '', filter='字幕 (*.srt;*.ass;*.ssa;*.vtt)'), F('mode', '方式', 'select', 'burn', options=[['burn', '燒進畫面（任何播放器都看得到）'], ['soft', '內嵌字幕軌（可開關、不重新編碼）']]),
         F('size', '字級', 'number', 22, min=8, max=80, show={'mode': 'burn'}), F('outline', '黑色外框', 'check', True, show={'mode': 'burn'})]),
     dict(id='v_autosub', group='video', icon='sparkles', name='AI 自動字幕', desc='離線語音辨識產生字幕，可轉繁體、可直接燒進影片', accept=['video', 'audio'], fields=[
-        F('lang', '語言', 'select', 'zh', options=LANGS), F('model', '辨識模型', 'select', 'small', options=[['base', '快速（約 150 MB）'], ['small', '準確（約 490 MB，建議）'], ['medium', '最準（約 1.5 GB，較慢）']]),
+        F('lang', '語言', 'select', 'zh', options=LANGS), F('model', '辨識模型', 'select', 'base', options=[['base', '快速（已內建，免下載）'], ['small', '準確（第一次使用下載約 490 MB）'], ['medium', '最準（第一次使用下載約 1.5 GB）']]),
         F('trad', '轉成繁體中文', 'check', True), F('out', '輸出', 'select', 'srt', options=[['srt', '只要 SRT 字幕檔'], ['burn', '字幕檔＋燒進影片'], ['soft', '字幕檔＋內嵌字幕軌']])]),
     dict(id='v_audio', group='video', icon='music', name='配樂／換音軌', desc='加背景音樂、與原聲混合，或整個換掉', accept=['video'], fields=[
         F('music', '音樂檔', 'file', '', filter='音訊 (*.mp3;*.m4a;*.wav;*.flac;*.ogg;*.aac)'), F('mode', '方式', 'select', 'mix', options=[['mix', '與原聲混合'], ['replace', '取代原聲']]),
@@ -238,6 +238,11 @@ def video_tool(eng, j, src, suffix, vf=None, af=None, fc=None, maps=None, extra_
     out = out_for(j, src, ext or vext(src), suffix); j.output = out
     d = dur if dur is not None else info(src)['dur']
     audio = audio and has_audio(src)
+    tm = E.hdr_filters(src)
+    if tm:                                   # HDR source: tone-map to SDR before any other filter
+        if fc: fc = fc.replace('[0:v]', '[0:v]' + ','.join(tm) + ',', 1)
+        else: vf = tm + list(vf or [])
+        j.hdr = True
     def build(hw):
         c = base_cmd(pre_in) + ['-i', src]
         for x in extra_in: c += list(x)
@@ -285,13 +290,19 @@ def audio_tool(eng, j, src, suffix, af, ext=None, extra_in=(), fc=None, maps=Non
     return out
 
 def find_font(bold=False):
+    """Windows' Microsoft JhengHei when present, otherwise the Noto Sans TC shipped in tools\\fonts
+    (so watermarks / subtitles work the same on any PC, including non-Chinese Windows)."""
     win = os.environ.get('WINDIR', r'C:\Windows')
     cands = [os.path.join(win, 'Fonts', n) for n in (('msjhbd.ttc', 'msjh.ttc') if bold else ('msjh.ttc', 'msjhbd.ttc'))]
-    cands += [os.path.join(win, 'Fonts', n) for n in ('mingliu.ttc', 'arialbd.ttf' if bold else 'arial.ttf', 'segoeui.ttf')]
+    cands += [E.bundled('fonts', 'NotoSansTC-Bold.otf' if bold else 'NotoSansTC-Regular.otf'), E.bundled('fonts', 'NotoSansTC-Regular.otf')]
     cands += ['/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf']
     for p in cands:
         if os.path.isfile(p): return p
     return None
+
+def font_family():
+    f = os.path.basename(find_font() or '').lower()
+    return 'Microsoft JhengHei' if f.startswith('msjh') else 'Noto Sans TC' if f.startswith('notosanstc') else 'Noto Sans CJK TC'
 
 def hexcolor(c, default='#ffffff'):
     c = (c or default).strip()
@@ -433,7 +444,7 @@ def burn_subs(eng, j, src, sub, size=22, outline=True, suffix='_字幕', base=0.
     try:
         ext = os.path.splitext(sub)[1].lower() or '.srt'
         with open(os.path.join(tmp, 'sub' + ext), 'w', encoding='utf-8') as fh: fh.write(read_text_any(sub))
-        style = f"FontName=Microsoft JhengHei,FontSize={int(size)},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline={2 if outline else 0},Shadow={1 if outline else 0},MarginV=24"
+        style = f"FontName={font_family()},FontSize={int(size)},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline={2 if outline else 0},Shadow={1 if outline else 0},MarginV=24"
         font_dir = os.path.dirname(find_font() or '') or tmp
         vf = [f"subtitles=sub{ext}:fontsdir='{ffesc(font_dir)}'" + (f":force_style='{style}'" if ext in ('.srt', '.vtt') else '')]
         return video_tool(eng, j, src, suffix, vf=vf, cwd=tmp, base=base, span=span)
@@ -568,7 +579,7 @@ def t_frames(eng, j, o):
     if o.get('mode', 'sheet') == 'every':
         folder = out_dir_for(j, src, '_畫面'); j.output = folder
         sec = max(0.04, num(o, 'sec', 5))
-        c = base_cmd() + ['-i', src, '-vf', f'fps=1/{sec:.4f}', '-q:v', '3', os.path.join(folder, '%04d.jpg')]
+        c = base_cmd() + ['-i', src, '-vf', ','.join(E.hdr_filters(src) + [f'fps=1/{sec:.4f}']), '-q:v', '3', os.path.join(folder, '%04d.jpg')]
         j.encoder = 'FFmpeg'; eng._exec(j, c, d)
     else:
         cols = int(num(o, 'cols', 4)); rows = int(num(o, 'rows', 5)); n = cols * rows
@@ -576,7 +587,7 @@ def t_frames(eng, j, o):
         out = out_for(j, src, 'jpg', '_縮圖總覽'); j.output = out
         font = find_font()
         stamp = (f",drawtext=fontfile='{ffesc(font)}':text='%{{pts\\:hms}}':x=8:y=h-th-8:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=4") if font else ''
-        vf = f"fps={n / d:.6f},scale=480:-2{stamp},tile={cols}x{rows}:padding=6:margin=6:color=white"
+        vf = ''.join(x + ',' for x in E.hdr_filters(src)) + f"fps={n / d:.6f},scale=480:-2{stamp},tile={cols}x{rows}:padding=6:margin=6:color=white"
         c = base_cmd() + ['-i', src, '-vf', vf, '-frames:v', '1', '-q:v', '3', '-update', '1', out]
         j.encoder = 'FFmpeg'; eng._exec(j, c, d)
     if j._rc != 0 and not j.cancelled: raise RuntimeError(ff_error(j._err, '擷取失敗'))
@@ -598,6 +609,9 @@ def t_grid(eng, j, o):
         Wd = even(H * 16 / 9)
         pre = ''.join(f'[{i}:v]scale={Wd}:-2,setsar=1,fps=30[v{i}];' for i in range(n))
         fc = pre + ''.join(f'[v{i}]' for i in range(n)) + f'vstack=inputs={n}:shortest=1,format=yuv420p[v]'
+    for i in range(1, n):
+        tm = E.hdr_filters(fs[i])
+        if tm: fc = fc.replace(f'[{i}:v]', f'[{i}:v]' + ','.join(tm) + ',', 1)
     maps = ['[v]'] + (['0:a:0'] if has_audio(fs[0]) else [])
     video_tool(eng, j, fs[0], '_並排', fc=fc, maps=maps, extra_in=[['-i', f] for f in fs[1:]], dur=d, ext='mp4')
 
@@ -606,10 +620,15 @@ MODELS = {'base': ('ggml-base.bin', 147951465), 'small': ('ggml-small.bin', 4876
 MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/'
 
 def model_dir():
-    d = os.path.join(E.base_dir(), 'models')
-    try: os.makedirs(d, exist_ok=True); return d
-    except OSError:
-        d = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ZhuanDangGongChang', 'models'); os.makedirs(d, exist_ok=True); return d
+    """Models the user downloads later (writable)."""
+    d = os.path.join(E.data_dir(), 'models'); os.makedirs(d, exist_ok=True); return d
+
+def find_model(name, min_size=0):
+    """Bundled models (tools\\models, shipped with the app) first, then ones downloaded later."""
+    for d in (E.bundled('models'), model_dir()):
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and os.path.getsize(p) >= min_size: return p
+    return None
 
 _WHISPER = None
 def whisper_ok():
@@ -621,8 +640,9 @@ def whisper_ok():
 
 def ensure_model(j, key):
     name, size = MODELS[key]
+    have = find_model(name, size * 0.98)
+    if have: return have
     p = os.path.join(model_dir(), name)
-    if os.path.isfile(p) and os.path.getsize(p) >= size * 0.98: return p
     import urllib.request
     j.encoder = f'第一次使用，下載辨識模型（{size // 1048576} MB）…'
     tmp = p + '.part'
@@ -643,8 +663,9 @@ def ensure_model(j, key):
 
 VAD_URL = 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin'
 def ensure_vad():
+    have = find_model('ggml-silero-v5.1.2.bin', 100000)
+    if have: return have
     p = os.path.join(model_dir(), 'ggml-silero-v5.1.2.bin')
-    if os.path.isfile(p) and os.path.getsize(p) > 100000: return p
     try:
         import urllib.request
         with urllib.request.urlopen(urllib.request.Request(VAD_URL, headers={'User-Agent': 'ZDGC'}), timeout=20) as r: data = r.read()

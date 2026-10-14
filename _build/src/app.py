@@ -4,7 +4,10 @@ import engine as E
 import tools as T
 import capture as C
 
-SETTINGS = os.path.join(E.base_dir(), 'settings.json')
+SETTINGS = os.path.join(E.data_dir(), 'settings.json')
+VERSION = '2.0.0'
+EDITION = '試用版'                 # free, no time limit, no locked features - just labelled like WinRAR / 7-Zip style freeware
+TITLE = f'轉檔工廠（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,
                 finish='sound', watch=[], tool_opts={}, rec={}, dl={}, tab='convert')
 
@@ -61,7 +64,7 @@ class Api:
             return dict(src='data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode(), w=W, h=H, dur=0)
         i = E.probe_info(path); d = i['dur']; t = d * 0.3 if t is None else float(t)
         r = subprocess.run([E.FFMPEG, '-hide_banner', '-v', 'error', '-ss', f'{max(0, min(t, d - 0.1)):.2f}', '-i', path, '-frames:v', '1',
-                            '-vf', 'scale=1280:-2', '-f', 'image2pipe', '-c:v', 'mjpeg', '-q:v', '4', '-'], capture_output=True, creationflags=E.NOWIN)
+                            '-vf', ','.join(E.hdr_filters(path) + ['scale=1280:-2']), '-f', 'image2pipe', '-c:v', 'mjpeg', '-q:v', '4', '-'], capture_output=True, creationflags=E.NOWIN)
         return dict(src='data:image/jpeg;base64,' + base64.b64encode(r.stdout).decode(), w=i['width'], h=i['height'], dur=d)
 
     def drives(self): return T.list_drives()
@@ -104,13 +107,50 @@ class Api:
     def init(self):
         hw = E._HW if (E._HW is not None and not E._HW_BUSY) else []
         names = {'h264_nvenc': 'NVIDIA NVENC', 'h264_qsv': 'Intel QSV', 'h264_amf': 'AMD AMF'}
-        return dict(settings=self._s, hw=[names[h] for h in hw], ffmpeg=bool(E.FFMPEG), office=bool(E.SOFFICE), tools=T.schema(), ytdlp=bool(C.ytdlp()))
+        pc = dict(cores=os.cpu_count() or 0, ram=round(E.mem_gb(), 1), low=E.low_end())
+        return dict(version=VERSION, edition=EDITION, pc=pc, settings=self._s, hw=[names[h] for h in hw], ffmpeg=bool(E.FFMPEG), office=bool(E.SOFFICE), tools=T.schema(), ytdlp=bool(C.ytdlp()))
 
     def save_settings(self, s):
         self._s.update({k: v for k, v in (s or {}).items() if k != 'watch'})   # watch rules are owned by watch_set
-        try: json.dump(self._s, open(SETTINGS, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+        try:                                   # write-then-rename: a crash or power cut never leaves a half-written settings file
+            tmp = SETTINGS + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as fh: json.dump(self._s, fh, ensure_ascii=False, indent=1)
+            os.replace(tmp, SETTINGS)
         except Exception: pass
         return True
+
+    # ---------- job actions
+    def retry(self, jid):
+        r = self._eng.retry(jid)
+        if r == 'dl':
+            old = self._eng.jobs[jid]; ids = self._dl.start(old.files[0], old.opt)
+            with self._eng.lock:
+                if jid in self._eng.order: self._eng.order.remove(jid)
+            return ids[0]
+        return r
+    def open_file(self, path):
+        if path and os.path.exists(path):
+            try: os.startfile(path)
+            except Exception: self.reveal(path)
+        return True
+    def open_doc(self, name):
+        p = os.path.join(E.base_dir(), {'license': '授權說明.md', 'guide': '使用說明.md'}.get(name, ''))
+        if os.path.isfile(p):
+            try: os.startfile(p)
+            except Exception: self.reveal(p)
+        return True
+    def open_log(self):
+        d = E.log_dir()
+        try: os.startfile(d)
+        except Exception: pass
+        return d
+    def media_info(self, paths):
+        """Duration / resolution / HDR for the file lists (video and audio only)."""
+        out = {}
+        for p in (paths or [])[:300]:
+            if E.classify(p)[0] in ('video', 'audio'):
+                i = E.probe_info(p); out[p] = dict(dur=i['dur'], w=i['width'], h=i['height'], hdr=i.get('hdr', ''), a=i['acodec'])
+        return out
 
     def describe(self, paths):
         out = []
@@ -173,40 +213,147 @@ def bind(win):
     win.dom.document.events.dragover += DOMEventHandler(lambda e: None, True, True)
     win.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
 
-api = Api()
-def selftest(d):
+api = None   # created in __main__ after the single-instance check
+PIPE = r'\\.\pipe\ZhuanDangGongChang-' + (os.environ.get('USERNAME') or 'user')
+
+def forward_to_running():
+    """If 轉檔工廠 is already open, hand our files to it (and bring it to the front) instead of opening a 2nd window."""
+    if os.name != 'nt': return False
+    try:
+        from multiprocessing.connection import Client
+        c = Client(PIPE, family='AF_PIPE', authkey=b'zdgc'); c.send([os.path.abspath(a) for a in sys.argv[1:] if os.path.exists(a)]); c.close()
+        return True
+    except Exception:
+        return False
+
+def serve_instances():
+    if os.name != 'nt': return
+    from multiprocessing.connection import Listener
+    try: lst = Listener(PIPE, family='AF_PIPE', authkey=b'zdgc')
+    except Exception: return
+    while True:
+        try:
+            c = lst.accept(); paths = c.recv(); c.close()
+        except Exception:
+            continue
+        w = api._win
+        try:
+            w.restore(); w.show()
+            if os.name == 'nt': ctypes_foreground()
+        except Exception: pass
+        if paths:
+            try: w.evaluate_js(f'window.onDropped({json.dumps(api.describe(paths), ensure_ascii=False)}, {json.dumps(paths, ensure_ascii=False)})')
+            except Exception: pass
+
+def ctypes_foreground():
+    import ctypes
+    u = ctypes.windll.user32
+    h = u.FindWindowW(None, api._win.title) if api._win else 0
+    if h: u.ShowWindow(h, 9); u.SetForegroundWindow(h)
+
+def monitor():
+    """Window title shows overall progress; the PC does not go to sleep mid-conversion; the taskbar button flashes when done."""
     import time
-    log = open(os.path.join(d, 'selftest.log'), 'w', encoding='utf-8')
-    log.write(f'ffmpeg={E.FFMPEG}\nsoffice={E.SOFFICE}\ncalibre={E.CALIBRE}\npandoc={E.PANDOC}\n7z={E.SEVENZIP}\nhw={E.detect_hw()}\n')
-    J = lambda f: os.path.join(d, f)
-    cases = [(['v.mp4'], 'mkv', dict(hwaccel=True)), (['v.mp4'], 'mp4', dict(hwaccel=False, height=720)),
-             (['v.mp4'], 'mp4', dict(hwaccel=True, height=720)), (['v.mp4'], 'webm', {}), (['v.mp4'], 'gif', dict(trim_start=0, trim_end=3)),
-             (['v.mp4'], 'mp3', {}), (['v.mp4'], 'mp4', dict(target_mb=2)),
-             (['a.wav'], 'flac', {}), (['a.wav'], 'opus', {}), (['a.wav'], 'm4a', {}),
-             (['i.png'], 'webp', {}), (['i.png'], 'avif', {}), (['i.png'], 'ico', {}), (['i.png'], 'jpg', dict(target_mb=0.1)), (['i.heic'], 'jpg', {}),
-             (['i.png', 'i2.png'], 'pdf', {}), (['p.pdf'], 'png', {}), (['t.txt'], 'pdf', {}),
-             (['p.pdf'], 'txt', {}), (['d.md'], 'docx', {}), (['d.md'], 'html', {}), (['d.md'], 'epub', {}), (['d.docx'], 'pdf', {}), (['d.docx'], 'md', {}),
-             (['b.epub'], 'docx', {}), (['s.csv'], 'xlsx', {}), (['s.csv'], 'pdf', {}), (['x.zip'], 'extract', {}), (['x.tar.gz'], 'extract', {}),
-             (['x.zip'], '7z', {}), (['v.mkv'], 'mp4', dict(fastcopy=True)), (['a.wav'], 'mp3', dict(loudnorm=True)), (['b.epub'], 'mobi', {}), (['b.epub'], 'azw3', {}), (['x.docx'], 'pdf', {}), (['x.doc'], 'pdf', {}), (['x.xls'], 'xlsx', {}), (['x.ppt'], 'pdf', {}), (['c.srt'], 'vtt', {}), (['c.srt'], 'ass', {}), (['m.stl'], 'glb', {}), (['m.stl'], 'obj', {}),
-             (['g.svg'], 'png', {}), (['k.psd'], 'jpg', {}), (['r.dng'], 'jpg', {}), (['z.kfx'], 'epub', {})]
-    eng = E.Engine(1, 1)
-    for fs, t, o in cases:
-        fs = [J(f) for f in fs]
-        if not all(os.path.exists(f) for f in fs): log.write(f'SKIP {fs}\n'); continue
-        ids = eng.submit(fs, t, o, merge=len(fs) > 1)
-        while any(eng.jobs[i].state in ('queued', 'running') for i in ids): time.sleep(0.1)
-        for i in ids:
-            j = eng.jobs[i]; sz = os.path.getsize(j.output) if j.output and os.path.isfile(j.output) else 0
-            log.write(f'{j.state}\t{os.path.basename(fs[0])}->{t}\t{o}\t{j.elapsed:.2f}s\t{j.encoder}\t{sz}\t{j.msg}\n'); log.flush()
-    ids = eng.submit([J('v.mp4'), J('v.mp4')], 'mp4', dict(height=480), merge=True)
-    while any(eng.jobs[i].state in ('queued', 'running') for i in ids): time.sleep(0.1)
-    j = eng.jobs[ids[0]]; log.write(f'{j.state}\tmerge 2x\t{j.elapsed:.2f}s\t{j.msg}\n')
-    ids = eng.submit([J('v.mp4')], 'mkv', dict(hwaccel=False, preset='high', height=1080, fastcopy=False))
-    time.sleep(1.5); eng.cancel(ids[0]); time.sleep(1); log.write(f'cancel test: {eng.jobs[ids[0]].state}\n'); log.close()
+    was = False; sleep_blocked = False
+    while True:
+        time.sleep(1)
+        try:
+            jobs = api._eng.status(); act = [j for j in jobs if j['state'] in ('queued', 'running')]
+            busy = bool(act)
+            if busy:
+                p = sum(j['progress'] for j in act) / len(act)
+                title = f'{p * 100:.0f}% · {len(act)} 個工作 — {TITLE}'
+            else: title = TITLE
+            if api._win and api._win.title != title:
+                try: api._win.set_title(title)
+                except Exception: pass
+            if os.name == 'nt':
+                import ctypes
+                if busy and not sleep_blocked: ctypes.windll.kernel32.SetThreadExecutionState(0x80000001); sleep_blocked = True
+                elif not busy and sleep_blocked: ctypes.windll.kernel32.SetThreadExecutionState(0x80000000); sleep_blocked = False
+                if was and not busy:
+                    u = ctypes.windll.user32; h = u.FindWindowW(None, TITLE)
+                    if h and u.GetForegroundWindow() != h:
+                        class FW(ctypes.Structure): _fields_ = [('cbSize', ctypes.c_uint), ('hwnd', ctypes.c_void_p), ('dwFlags', ctypes.c_uint), ('uCount', ctypes.c_uint), ('dwTimeout', ctypes.c_uint)]
+                        fw = FW(ctypes.sizeof(FW), h, 0x3 | 0xC, 0, 0); u.FlashWindowEx(ctypes.byref(fw))   # FLASHW_ALL | FLASHW_TIMERNOFG
+            was = busy
+        except Exception:
+            pass
+
+def win_geometry():
+    """Fit the window to the usable screen area (taskbar excluded), in logical pixels, so it also works on
+    1366x768 laptops at 125 % scaling. Saved size/position is reused only if it still fits."""
+    g = api._s.get('win') or {}
+    W, H, ox, oy = 1366, 728, 0, 0
+    try:
+        import ctypes
+        from ctypes import wintypes
+        r = wintypes.RECT(); ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0)   # SPI_GETWORKAREA
+        try: k = ctypes.windll.user32.GetDpiForSystem() / 96
+        except Exception: k = 1.0
+        W, H, ox, oy = (r.right - r.left) / k, (r.bottom - r.top) / k, r.left / k, r.top / k
+    except Exception:
+        pass
+    dw, dh = min(1240, int(W * 0.94)), min(820, int(H * 0.94))
+    w = int(g.get('w') or dw); h = int(g.get('h') or dh)
+    w = max(min(w, int(W)), min(900, int(W))); h = max(min(h, int(H)), min(560, int(H)))
+    x, y = g.get('x'), g.get('y')
+    if x is None or y is None or not (ox - 20 <= x <= ox + W - 200 and oy - 10 <= y <= oy + H - 100):
+        x, y = int(ox + (W - w) / 2), int(oy + (H - h) / 2)
+    return w, h, x, y
+
+def remember(**kw):
+    g = dict(api._s.get('win') or {}); g.update(kw); api._s['win'] = g
+
+WV2_ID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+def webview2_ok():
+    """Edge WebView2 runtime (the window engine). Built into Windows 11 and updated Windows 10."""
+    if os.name != 'nt': return True
+    import winreg
+    for root, sub in ((winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\' + WV2_ID),
+                      (winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\' + WV2_ID),
+                      (winreg.HKEY_CURRENT_USER, 'Software\\Microsoft\\EdgeUpdate\\Clients\\' + WV2_ID)):
+        try:
+            with winreg.OpenKey(root, sub) as k:
+                v = winreg.QueryValueEx(k, 'pv')[0]
+                if v and v != '0.0.0.0': return True
+        except OSError: continue
+    return False
+
+def ensure_webview2():
+    """Never depend on what the PC happens to have: use the installed runtime, else a private copy in
+    tools\\webview2 (Fixed Version runtime), else offer the bundled installer."""
+    if webview2_ok(): return True
+    fixed = E.bundled('webview2')
+    if os.path.isfile(os.path.join(fixed, 'msedgewebview2.exe')):
+        os.environ['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'] = fixed; return True
+    import ctypes
+    setup = E.bundled('MicrosoftEdgeWebview2Setup.exe')
+    msg = ('轉檔工廠的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n'
+           + ('按「確定」立即安裝（約 1 分鐘，需要網路），完成後會自動開啟轉檔工廠。' if os.path.isfile(setup) else '請到 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。'))
+    r = ctypes.windll.user32.MessageBoxW(None, msg, TITLE, 0x41 if os.path.isfile(setup) else 0x30)
+    if r == 1 and os.path.isfile(setup):
+        subprocess.run([setup, '/silent', '/install'])
+        return webview2_ok()
+    return False
 
 if __name__ == '__main__':
-    if len(sys.argv) > 2 and sys.argv[1] == '--selftest':
-        selftest(sys.argv[2]); sys.exit(0)
-    api._win = webview.create_window('轉檔工廠', url=res('ui/index.html'), js_api=api, width=1240, height=820,
-                                    min_size=(980, 640), background_color='#F4F6FA')
+    if len(sys.argv) > 1 and sys.argv[1] == '--selftest':
+        import selftest
+        selftest.main(sys.argv[2] if len(sys.argv) > 2 else None); sys.exit(0)
+    if forward_to_running(): sys.exit(0)
+    if not ensure_webview2(): sys.exit(1)
+    api = Api()
+    import threading as _t
+    _t.Thread(target=serve_instances, daemon=True).start()
+    _t.Thread(target=monitor, daemon=True).start()
+    w, h, x, y = win_geometry()
+    api._win = webview.create_window(TITLE, url=res('ui/index.html'), js_api=api, width=w, height=h, x=x, y=y,
+                                    min_size=(900, 560), background_color='#F5F5F7')
+    try:
+        api._win.events.resized += lambda width, height: remember(w=width, h=height)
+        api._win.events.moved += lambda x, y: remember(x=x, y=y)
+        api._win.events.closing += lambda: api.save_settings({})
+    except Exception: pass
     webview.start(bind, api._win, gui='edgechromium', private_mode=True, debug=False)
+    api.save_settings({})

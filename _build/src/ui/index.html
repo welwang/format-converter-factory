@@ -1,11 +1,11 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>轉檔工廠</title><link rel="icon" href="logo.png">
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>轉檔工廠（試用版）</title><link rel="icon" href="logo.png">
 <style>
 :root{
  --blue:#007AFF;--green:#34C759;--red:#FF3B30;--orange:#FF9500;--pink:#FF2D55;--purple:#AF52DE;--indigo:#5856D6;--teal:#30B0C7;--cyan:#32ADE6;--gray:#8E8E93;--brown:#A2845E;
- --bg:#F5F5F7;--side:rgba(236,236,240,.86);--card:#FFFFFF;--fill:rgba(118,118,128,.12);--fill2:rgba(118,118,128,.08);
+ --bg:#F5F5F7;--side:#ECECF0;--card:#FFFFFF;--fill:rgba(118,118,128,.12);--fill2:rgba(118,118,128,.08);
  --sep:rgba(60,60,67,.13);--tx:#1D1D1F;--tx2:rgba(60,60,67,.62);--tx3:rgba(60,60,67,.36);--sel:rgba(0,122,255,.12);--shadow:0 1px 2px rgba(0,0,0,.05),0 2px 10px rgba(0,0,0,.04);--knob:#fff;
  --r:12px;color-scheme:light}
-.dark{--bg:#161618;--side:rgba(38,38,41,.9);--card:#232325;--fill:rgba(118,118,128,.24);--fill2:rgba(118,118,128,.16);--sep:rgba(84,84,88,.55);--tx:#F5F5F7;--tx2:rgba(235,235,245,.6);--tx3:rgba(235,235,245,.3);
+.dark{--bg:#161618;--side:#262629;--card:#232325;--fill:rgba(118,118,128,.24);--fill2:rgba(118,118,128,.16);--sep:rgba(84,84,88,.55);--tx:#F5F5F7;--tx2:rgba(235,235,245,.6);--tx3:rgba(235,235,245,.3);
  --sel:rgba(10,132,255,.22);--shadow:0 0 0 1px rgba(255,255,255,.04);--blue:#0A84FF;--green:#30D158;--red:#FF453A;color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}body{margin:0;font:13.5px/1.45 -apple-system,"SF Pro Text","Segoe UI Variable Text","Segoe UI","Microsoft JhengHei UI","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--tx);overflow:hidden;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
@@ -13,7 +13,7 @@ button,select,input,textarea{font:inherit;color:inherit;letter-spacing:inherit}
 svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .app{display:grid;grid-template-columns:232px minmax(0,1fr);height:100vh}
 /* ---------- sidebar ---------- */
-.side{background:var(--side);backdrop-filter:saturate(180%) blur(30px);border-right:1px solid var(--sep);display:flex;flex-direction:column;min-height:0}
+.side{background:var(--side);border-right:1px solid var(--sep);display:flex;flex-direction:column;min-height:0}
 .sb-head{display:flex;align-items:center;gap:10px;padding:18px 16px 12px}.sb-head img{width:34px;height:34px}
 .sb-head b{font-size:15px;font-weight:650;display:block;letter-spacing:.02em}.sb-head small{color:var(--tx2);font-size:11.5px}
 .search{display:flex;align-items:center;gap:6px;margin:4px 12px 10px;background:var(--fill);border-radius:9px;padding:0 9px;height:30px;color:var(--tx2)}
@@ -83,7 +83,7 @@ kbd{font:600 11px/1 inherit;border:1px solid var(--sep);border-bottom-width:2px;
 .cmain{display:grid;grid-template-rows:auto minmax(0,1fr);gap:20px;min-height:0}.cmain .list{display:flex;flex-direction:column;min-height:0}.cmain .list .group{overflow:auto}
 .insp{display:flex;flex-direction:column;gap:18px;overflow:auto;min-height:0;padding-bottom:4px}
 .insp .row .val select,.insp .row .val input{width:150px}
-.insp .stick{position:sticky;bottom:0;margin-top:auto;padding-top:8px;background:linear-gradient(transparent,var(--bg) 30%)}
+.insp .stick{position:sticky;bottom:0;margin-top:auto;padding:10px 0 2px;background:var(--bg);box-shadow:0 -12px 12px -4px var(--bg);z-index:2}
 /* tools */
 #p-tools{grid-template-columns:290px minmax(0,1fr);gap:22px}
 .tlist{overflow:auto;min-height:0}.tlist .row{min-height:52px}
@@ -116,16 +116,43 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
 .stage{position:relative;user-select:none;line-height:0;background:#000;border-radius:10px;overflow:hidden;cursor:crosshair;display:inline-block}
 .stage img{max-width:100%;max-height:62vh;display:block}.selbox{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.5);pointer-events:none;border-radius:2px}
 .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%) translateY(-12px);background:var(--card);box-shadow:0 10px 40px rgba(0,0,0,.18),0 0 0 .5px var(--sep);border-radius:99px;padding:9px 18px;opacity:0;transition:.25s;z-index:20;font-size:13px;pointer-events:none;max-width:80vw;font-weight:500;display:flex;gap:8px;align-items:center}
-.toast.on{opacity:1;transform:translateX(-50%)}.toast.err{color:var(--red)}
+.toast.on{opacity:1;transform:translateX(-50%)}.toast.err{color:var(--red)}.toast.act{pointer-events:auto}.toast .btn{padding:3px 10px;margin:-3px -8px -3px 4px;border-radius:99px}
+.dropov{position:fixed;inset:0;display:none;z-index:15;place-items:center;background:rgba(0,122,255,.10);pointer-events:none}.dropov.on{display:grid}
+.dropov .box{border:2px dashed var(--blue);border-radius:22px;padding:38px 64px;background:var(--card);text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.18)}
+.dropov .box b{display:block;font-size:18px;margin-top:10px}.dropov .box span{color:var(--tx2)}.dropov svg.i{width:42px;height:42px;color:var(--blue);stroke-width:1.5}
+.q .acts{display:flex;gap:2px;align-items:center}.q.done{cursor:default}.save{color:var(--green);font-weight:600}
+.hint2{font-size:12px;color:var(--tx2);text-align:center;margin-top:7px}
+.trial{font-size:10.5px;font-weight:600;color:var(--orange);background:rgba(255,149,0,.13);padding:1px 7px;border-radius:99px;margin-left:6px;vertical-align:2px;letter-spacing:.03em}
+.sb-head{cursor:pointer;border-radius:10px;margin:6px 8px 0;padding:12px 8px 10px}.sb-head:hover{background:var(--fill2)}
+.about{width:min(440px,92vw);text-align:center;padding:28px 30px 22px}.about img{width:84px;height:84px}.about h2{margin:10px 0 2px;font-size:22px}
+.about .ed{display:inline-block;margin:8px 0 14px;font-weight:600;color:var(--orange);background:rgba(255,149,0,.13);padding:4px 12px;border-radius:99px}
+.about p{color:var(--tx2);margin:6px 0;line-height:1.7}.about .links{display:flex;justify-content:center;gap:4px;margin-top:14px;flex-wrap:wrap}
+.sb-link{font-size:12px;color:var(--tx2);cursor:pointer;background:none;border:0;padding:0;text-align:left}.sb-link:hover{color:var(--blue)}
+/* ---------- small screens: 1366x768 laptops at 125 % (about 1093 x 614 usable) ---------- */
+@media (max-width:1180px){
+ .app{grid-template-columns:62px minmax(0,1fr)}
+ .sb-head{justify-content:center;padding:12px 0 8px;margin:6px 6px 0}.sb-head div,.search,.sb-label,.nav>span:not(.tile),.nav .cnt,.sb-foot .seg,.sb-link,.status{display:none!important}
+ .sb-scroll{padding:4px 8px}.nav{justify-content:center;padding:6px 0;margin-bottom:2px}.nav .tile{width:28px;height:28px;border-radius:7px}.nav .live{position:absolute;margin:0 0 20px 22px}
+ .sb-foot{padding:8px;align-items:center}.nav{position:relative}
+ #p-convert{grid-template-columns:minmax(0,1fr) 260px;gap:16px}#p-tools{grid-template-columns:240px minmax(0,1fr);gap:16px}
+ .page{padding:0 18px 12px}.bar{padding:16px 18px 10px}.val select,.val input{width:180px}
+ .tlist .row small{display:none}.tlist .row{min-height:44px}
+}
+@media (max-height:720px){
+ .bar{padding-top:12px;padding-bottom:8px}.bar h1{font-size:22px}.drop{padding:12px 16px}.drop img{width:34px;height:34px}.drop p{display:none}
+ .row{min-height:38px;padding-top:4px;padding-bottom:4px}.insp{gap:12px}.tdetail{gap:14px}.thead .tile.lg{width:40px;height:40px}.thead h2{font-size:17px}
+ .activity{max-height:clamp(110px,24vh,190px)}.q{padding:4px 10px}.recbox{padding:16px}.timer{font-size:34px}.btn.lg{padding:9px 16px}
+ .sb-head{padding:8px}.nav{min-height:28px}.sb-label{margin-top:10px}.hint2{display:none}
+}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--fill);border-radius:9px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background-color:var(--tx3)}
 </style></head><body>
 <div class="app">
 <aside class="side">
- <div class="sb-head"><img src="logo.png" alt=""><div><b>轉檔工廠</b><small>影音、文件、圖片一次搞定</small></div></div>
+ <div class="sb-head" id="sbhead" title="關於轉檔工廠"><img src="logo.png" alt=""><div><b>轉檔工廠<span class="trial">試用版</span></b><small>免費使用・沒有期限</small></div></div>
  <label class="search"><svg class="i" data-i="search"></svg><input id="gsearch" placeholder="搜尋工具或格式"></label>
  <div class="sb-scroll" id="nav"></div>
  <div class="sb-foot"><div class="status" id="hwchip"><i></i>偵測顯示卡中…</div>
- <div class="seg" id="theme"><button data-v="auto">自動</button><button data-v="light">淺色</button><button data-v="dark">深色</button></div></div>
+ <div class="seg" id="theme"><button data-v="auto">自動</button><button data-v="light">淺色</button><button data-v="dark">深色</button></div><button class="sb-link" id="openlog">遇到問題？開啟記錄檔</button></div>
 </aside>
 <div class="content">
  <div class="bar"><h1 id="ptitle">轉檔</h1><span class="sub" id="psub"></span><div class="tools"><button class="btn plain" id="fmtbtn">支援格式</button></div></div>
@@ -138,7 +165,7 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
  </div>
  <aside class="insp">
   <div><div class="ghead">輸出格式</div><div class="group"><div class="row"><select id="alltarget" style="width:100%"><option value="">每個檔案用建議格式</option></select></div></div></div>
-  <div><div class="ghead">品質</div><div class="seg" id="preset"><button data-v="high">高品質</button><button data-v="balanced">均衡</button><button data-v="small">小檔案</button></div></div>
+  <div><div class="ghead">品質</div><div class="seg" id="preset"><button data-v="high">高品質</button><button data-v="balanced">均衡</button><button data-v="small">小檔案</button></div><div class="gfoot" id="presetdesc"></div></div>
   <div><div class="ghead">調整</div><div class="group">
    <div class="row"><span class="lab">目標大小</span><span class="val"><input id="tmb" type="number" min="0" step="0.5" placeholder="不限" style="width:90px"><span class="mute">MB</span></span></div>
    <div class="row"><span class="lab">剪下片段</span><span class="val"><input id="ts" type="number" min="0" placeholder="開始秒" style="width:72px"><input id="te" type="number" min="0" placeholder="結束秒" style="width:72px"></span></div>
@@ -150,7 +177,7 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
    <div class="row" title="把音量調整到一致的響度（-16 LUFS）"><span class="lab">音量標準化</span><div class="sw" id="loudnorm"></div></div></div></div>
   <div><div class="ghead">儲存位置</div><div class="seg" id="outmode"><button data-v="source">原資料夾</button><button data-v="custom">指定資料夾</button></div>
    <div class="gfoot" id="outdir" style="cursor:pointer;word-break:break-all"></div></div>
-  <div class="stick"><button class="btn pri lg" id="go">開始轉檔</button></div>
+  <div class="stick"><button class="btn pri lg" id="go" title="Ctrl+Enter">開始轉檔</button><div class="hint2" id="gohint"></div></div>
  </aside></section>
  <!-- tools -->
  <section class="page" id="p-tools"><div class="tlist"><div class="group" id="tlist"></div></div>
@@ -158,7 +185,7 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
    <div class="thead"><div class="tile lg" id="t_tile"></div><div><h2 id="t_name"></h2><p id="t_desc"></p></div></div>
    <div><div class="ghead" id="t_fhead"></div><div class="group" id="t_list"></div><div class="gfoot" id="t_fnote"></div></div>
    <div id="t_optwrap"><div class="ghead">選項</div><div class="group" id="t_form"></div><div class="gfoot" id="t_note"></div></div>
-   <div style="margin-top:auto;position:sticky;bottom:0;padding-top:8px;background:linear-gradient(transparent,var(--bg) 30%)"><button class="btn pri lg" id="t_go">開始</button></div>
+   <div style="margin-top:auto;position:sticky;bottom:0;padding:10px 0 2px;background:var(--bg);box-shadow:0 -12px 12px -4px var(--bg);z-index:2"><button class="btn pri lg" id="t_go" title="Ctrl+Enter">開始</button><div class="hint2" id="t_gohint"></div></div>
   </div></section>
  <!-- recorder -->
  <section class="page scroll" id="p-rec"><div class="col">
@@ -207,7 +234,15 @@ textarea{width:100%;min-height:120px;resize:vertical;border-radius:10px;padding:
 <div style="text-align:center"><div class="stage" id="stage"><img id="simg" draggable="false"><div class="selbox" id="sel" style="display:none"></div></div></div>
 <div style="display:flex;gap:10px;align-items:center;margin-top:14px"><input type="range" id="stime" min="0" max="1000" value="300" style="flex:1"><span class="mute small" id="stimel" style="min-width:70px"></span>
 <button class="btn" id="rcancel">取消</button><button class="btn pri" id="rok">完成</button></div></div></div>
+<div class="modal" id="amodal"><div class="sheet about"><img src="logo.png" alt=""><h2>轉檔工廠</h2><div class="mute small" id="aver"></div>
+<div class="ed" id="aed">試用版</div>
+<p id="awel" style="display:none;color:var(--tx);font-weight:600">歡迎使用！</p>
+<p>這是<b>試用版</b>，但<b>完全免費</b>、<b>沒有使用期限</b>，<br>所有功能都能使用，也不會跳出付費提醒。</p>
+<p class="small">所有轉檔都在你的電腦上完成，檔案不會上傳到任何地方。</p>
+<div class="links"><button class="btn plain" data-doc="guide">使用說明</button><button class="btn plain" data-doc="license">第三方元件授權</button><button class="btn plain" data-doc="log">記錄檔</button></div>
+<button class="btn pri lg" id="aok" style="margin-top:16px">開始使用</button></div></div>
 <div class="toast" id="toast"></div>
+<div class="dropov" id="dropov"><div class="box"><svg class="i" data-i="download"></svg><b id="dropt">放開以加入檔案</b><span id="drops"></span></div></div>
 <script>
 /* ---------- icons (24px line set) ---------- */
 const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',plus:'<path d="M12 5v14M5 12h14"/>',x:'<path d="M18 6 6 18M6 6l12 12"/>',
@@ -252,15 +287,19 @@ const GC={convert:'var(--blue)',video:'var(--indigo)',audio:'var(--pink)',image:
 const GI={convert:'convert',video:'video',audio:'audio',image:'image',pdf:'pdf',other:'shield',disc:'disc',rec:'record',dl:'download',auto:'bolt'};
 const tile=(icon,color,size='')=>`<span class="tile ${size}" style="background:${color}">${svg(icon)}</span>`;
 /* ---------- state ---------- */
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let S={},files=[],API,TS=null,tool=null,tfiles=[],TV={},group='video';
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let PC={},S={},files=[],API,TS=null,tool=null,tfiles=[],TV={},group='video';
 const CAT={video:'影片',audio:'音訊',image:'圖片',pdf:'PDF',office:'文件',doc:'文件',sheet:'試算表',ebook:'電子書',archive:'壓縮檔',subtitle:'字幕',model:'3D'};
 const CATC={video:'var(--indigo)',audio:'var(--pink)',image:'var(--green)',pdf:'var(--red)',doc:'var(--blue)',office:'var(--blue)',sheet:'#1D9A55',ebook:'var(--purple)',archive:'var(--gray)',subtitle:'var(--teal)',model:'var(--orange)'};
 const CATI={video:'video',audio:'audio',image:'image',pdf:'pdf',doc:'doc',office:'doc',sheet:'table',ebook:'book',archive:'archive',subtitle:'cc',model:'cube'};
 const TL=t=>t=='extract'?'解壓縮':t.toUpperCase();let FT=[];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtSize=b=>b>1<<30?(b/(1<<30)).toFixed(1)+' GB':b>1<<20?(b/(1<<20)).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+const fmtDur=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`};
+const MI={};async function loadInfo(list,cb){const need=list.filter(f=>(f.cat=='video'||f.cat=='audio')&&!(f.path in MI)).map(f=>f.path);if(!need.length||!API)return;need.forEach(p=>MI[p]=null);
+ const r=await API.media_info(need);Object.assign(MI,r);cb()}
+const miText=p=>{const m=MI[p];if(!m)return'';const q=m.h?(m.h>=2160?'4K':m.h>=1440?'1440p':m.h>=1080?'1080p':m.h>=720?'720p':m.h+'p'):'';return [q,m.dur?fmtDur(m.dur):'',m.hdr?'HDR':''].filter(Boolean).join(' · ')};
 const fmtT=s=>s==null?'':s<60?s+' 秒':s<3600?Math.floor(s/60)+' 分 '+(s%60)+' 秒':Math.floor(s/3600)+' 小時 '+Math.floor(s%3600/60)+' 分';
-function toast(m,err){const t=$('#toast');t.innerHTML=(err?'':'')+esc(m);t.className='toast on'+(err?' err':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',err?5000:2400)}
+function toast(m,err,act){const t=$('#toast');t.innerHTML=esc(m)+(act?`<button class="btn tint">${esc(act[0])}</button>`:'');t.className='toast on'+(err?' err':'')+(act?' act':'');if(act)t.querySelector('button').onclick=()=>{t.className='toast';act[1]()};clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',act?7000:err?5000:2400)}
 async function call(fn,...a){try{return await API[fn](...a)}catch(e){toast(String(e.message||e).replace(/^.*?Error:\s*/,''),1);throw e}}
 function save(){API&&API.save_settings(S)}
 function setSeg(id,v){$$(id+' button').forEach(b=>b.classList.toggle('on',b.dataset.v==v))}
@@ -270,7 +309,7 @@ mq.addEventListener('change',theme);$('#theme').onclick=e=>{const v=e.target.dat
 const sw=(id,on)=>$('#'+id).classList.toggle('on',!!on),isOn=id=>$('#'+id).classList.contains('on');
 /* ---------- navigation ---------- */
 const PAGES={convert:['轉檔','把任何檔案轉成需要的格式'],rec:['螢幕錄影','錄下整個螢幕或指定範圍'],dl:['下載影片','從網站下載影片或音樂'],auto:['自動化','監控資料夾與完成後動作']};
-function navHTML(){if(!TS)return'';const it=(k,name,extra='')=>`<div class="nav ${S.tab==k?'on':''}" data-k="${k}">${tile(GI[k],GC[k])}<span>${name}</span>${extra}</div>`;
+function navHTML(){if(!TS)return'';const it=(k,name,extra='')=>`<div class="nav ${S.tab==k?'on':''}" data-k="${k}" title="${name}">${tile(GI[k],GC[k])}<span>${name}</span>${extra}</div>`;
  const cnt=g=>TS.tools.filter(t=>t.group==g).length;
  return it('convert','轉檔')+'<div class="sb-label">工具</div>'+TS.groups.map(([g,n])=>it(g,n.replace('工具',''),`<span class="cnt">${cnt(g)}</span>`)).join('')
   +'<div class="sb-label">更多</div>'+it('rec','螢幕錄影','<i class="live" id="recdot"></i>')+it('dl','下載影片')+it('auto','自動化')}
@@ -280,26 +319,34 @@ function go(k){S.tab=k;const isTool=TS.groups.some(g=>g[0]==k)||k=='search';$$('
  if(isTool){group=k;$('#p-tools').classList.add('on');const gn=k=='search'?['搜尋結果','']:TS.groups.find(g=>g[0]==k);$('#ptitle').textContent=k=='search'?'搜尋結果':gn[1];$('#psub').textContent=k=='search'?'':`${TS.tools.filter(t=>t.group==k).length} 個工具`;renderTList();
   const want=(S.tool_by_group||{})[k];const list=visibleTools();pickTool(list.some(t=>t.id==want)?want:(list[0]||{}).id)}
  else{$('#p-'+k).classList.add('on');$('#ptitle').textContent=PAGES[k][0];$('#psub').textContent=PAGES[k][1];if(k=='rec')recInit();if(k=='auto')autoInit()}
- if(k!='search'){renderNav();save()}}
+ renderNav();if(k!='search')save()}
 $('#gsearch').oninput=e=>{const q=e.target.value.trim();if(q){S.tab='search';go('search')}else go(group=='search'?'video':group)};
 function visibleTools(){const q=$('#gsearch').value.trim().toLowerCase();return group=='search'?TS.tools.filter(t=>(t.name+t.desc).toLowerCase().includes(q)):TS.tools.filter(t=>t.group==group)}
 /* ---------- convert ---------- */
 function addFiles(list){const have=new Set(files.map(f=>f.path));let n=0;list.forEach(f=>{if(!have.has(f.path)){f.target=f.suggest;files.push(f);n++}});render();if(list.length&&!n)toast('這些檔案已經在清單裡了')}
 window.onDropped=(list,raw)=>{if($('#p-tools').classList.contains('on')&&tool)addToolFiles(raw);else{if(S.tab!='convert')go('convert');addFiles(list);if(!list.length)toast('沒有可以轉換的檔案',1)}};
 function render(){const el=$('#files');
- el.innerHTML=files.length?files.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'doc',CATC[f.cat]||'var(--gray)','md')}<span class="lab"><span class="nm" title="${esc(f.path)}" style="display:block">${esc(f.name)}</span><small>${CAT[f.cat]||''} · ${fmtSize(f.size)}${f.note?' · <span class="warn">'+esc(f.note)+'</span>':''}</small></span>
+ el.innerHTML=files.length?files.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'doc',CATC[f.cat]||'var(--gray)','md')}<span class="lab"><span class="nm" title="${esc(f.path)}" style="display:block">${esc(f.name)}</span><small>${CAT[f.cat]||''} · ${fmtSize(f.size)}${miText(f.path)?' · '+miText(f.path):''}${f.note?' · <span class="warn">'+esc(f.note)+'</span>':''}</small></span>
   <span class="val">${f.targets.length?`<span class="mute small">轉成</span><select data-i="${i}" style="width:110px">${f.targets.map(t=>`<option ${t==f.target?'selected':''} value="${t}">${TL(t)}</option>`).join('')}</select>`:`<span class="warn small">${f.note?'不支援':'缺少元件'}</span>`}
   <button class="btn icon" data-r="${i}" title="移除">${svg('x')}</button></span></div>`).join(''):'<div class="empty">還沒有加入檔案</div>';
  const all=new Set();files.forEach(f=>f.targets.forEach(t=>all.add(t)));$('#alltarget').innerHTML='<option value="">每個檔案用建議格式</option>'+[...all].map(t=>`<option value="${t}">全部轉成 ${TL(t)}</option>`).join('');
- const n=files.filter(f=>f.targets.length).length;$('#go').disabled=!n;$('#go').textContent=n>1?`轉檔 ${n} 個檔案`:'開始轉檔'}
+ const n=files.filter(f=>f.targets.length).length;$('#go').disabled=!n;$('#go').textContent=n>1?`轉檔 ${n} 個檔案`:'開始轉檔';
+ $('#gohint').innerHTML=n?'按 <kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始':files.length?'清單中的檔案都無法轉換':'加入檔案後即可開始';loadInfo(files,render)}
 $('#files').addEventListener('change',e=>{if(e.target.dataset.i)files[e.target.dataset.i].target=e.target.value});
 $('#files').addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b){files.splice(+b.dataset.r,1);render()}});
 $('#alltarget').onchange=e=>{const v=e.target.value;files.forEach(f=>{f.target=v&&f.targets.includes(v)?v:f.suggest});render();$('#alltarget').value=v};
-const dz=$('#drop');['dragenter','dragover'].forEach(t=>document.addEventListener(t,e=>{e.preventDefault();dz.classList.add('on')}));['dragleave','drop'].forEach(t=>document.addEventListener(t,e=>{e.preventDefault();if(t=='drop'||!e.relatedTarget)dz.classList.remove('on')}));
-$('#addf').onclick=async()=>addFiles(await call('pick_files'));
+let dragN=0;const ov=$('#dropov');
+document.addEventListener('dragenter',e=>{e.preventDefault();if(dragN++==0){const tp=$('#p-tools').classList.contains('on')&&tool;$('#dropt').textContent=tp?`放開以加入到「${tool.name}」`:'放開以加入要轉檔的檔案';
+ $('#drops').textContent=tp?`可以使用：${tool.accept.map(a=>ACC[a]).join('、')}`:'影片、音訊、圖片、文件、電子書、壓縮檔都可以，資料夾也行';ov.classList.add('on')}});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('dragleave',e=>{e.preventDefault();if(--dragN<=0){dragN=0;ov.classList.remove('on')}});
+document.addEventListener('drop',e=>{e.preventDefault();dragN=0;ov.classList.remove('on')});
+$('#addf').onclick=async()=>addFiles(await call('pick_files'));$('#addf').title='Ctrl+O';
 $('#addd').onclick=async()=>{const r=await call('pick_folder','add');if(r)addFiles(r)};
 $('#clr').onclick=()=>{files=[];render()};
-$('#preset').onclick=e=>{if(e.target.dataset.v){S.preset=e.target.dataset.v;setSeg('#preset',S.preset);save()}};
+const PD={high:'畫質優先，檔案較大；適合保存與剪輯。',balanced:'畫質與大小兼顧，大部分情況建議用這個。',small:'檔案最小，適合傳訊息、寄信；畫質略降。'};
+function presetUI(){setSeg('#preset',S.preset);$('#presetdesc').textContent=PD[S.preset]||''}
+$('#preset').onclick=e=>{if(e.target.dataset.v){S.preset=e.target.dataset.v;presetUI();save()}};
 $('#outmode').onclick=async e=>{const v=e.target.dataset.v;if(!v)return;if(v=='custom'&&!S.out_dir||v=='custom'&&e.target.classList.contains('on')){const p=await call('pick_folder','out');if(p)S.out_dir=p;else if(!S.out_dir)return}S.out_mode=v;outUI();save()};
 $('#outdir').onclick=()=>$('#outmode button[data-v=custom]').click();
 function outUI(){setSeg('#outmode',S.out_mode);$('#outdir').innerHTML=S.out_mode=='custom'?esc(S.out_dir)+'　<span style="color:var(--blue)">更換…</span>':'存在原檔案旁邊，永遠不會覆蓋原檔。'}
@@ -307,7 +354,15 @@ function outUI(){setSeg('#outmode',S.out_mode);$('#outdir').innerHTML=S.out_mode
 $('#go').onclick=async()=>{const opt={preset:S.preset,target_mb:$('#tmb').value,trim_start:$('#ts').value,trim_end:$('#te').value,height:$('#h').value,hwaccel:S.hwaccel,fastcopy:S.fastcopy,loudnorm:S.loudnorm,out_dir:S.out_mode=='custom'?S.out_dir:''};
  const items=files.filter(f=>f.target&&f.targets.length).map(f=>({path:f.path,target:f.target}));await call('start',items,opt,isOn('merge'));toast(`已加入 ${items.length} 個工作`);files=[];render();poll()};
 /* ---------- activity ---------- */
-$('#queue').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.c)API.cancel(b.dataset.c);if(b.dataset.o)API.reveal(b.dataset.o)};
+$('#queue').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.c)API.cancel(b.dataset.c);if(b.dataset.o)API.reveal(b.dataset.o);if(b.dataset.f)API.open_file(b.dataset.f);
+ if(b.dataset.rt){await call('retry',b.dataset.rt);lastQ='';poll()}};
+$('#queue').ondblclick=e=>{const b=e.target.closest('.q');const f=b&&b.querySelector('[data-f]');if(f)API.open_file(f.dataset.f)};
+function sizeDelta(j){if(!j.out_size||!j.in_size||j.kind=='rec'||j.kind=='dl')return j.out_size&&j.kind?fmtSize(j.out_size)+'　':'';const d=(j.out_size-j.in_size)/j.in_size;
+ return `${fmtSize(j.in_size)} → ${fmtSize(j.out_size)}${Math.abs(d)>=0.01?`（<span class="${d<0?'save':''}">${d<0?'−':'+'}${Math.abs(d*100).toFixed(0)}%</span>）`:''}　`}
+$('#openlog').onclick=()=>API.open_log();
+function about(welcome){$('#awel').style.display=welcome?'':'none';$('#aok').textContent=welcome?'開始使用':'完成';$('#amodal').classList.add('on')}
+$('#sbhead').onclick=()=>about(false);$('#aok').onclick=()=>{$('#amodal').classList.remove('on');if(!S.welcomed){S.welcomed=true;save()}};
+$('#amodal .links').onclick=e=>{const d=e.target.dataset.doc;if(!d)return;if(d=='log')API.open_log();else API.open_doc(d)};
 $('#cancelall').onclick=()=>API.cancel_all();$('#cleardone').onclick=async()=>{await API.clear_done();lastQ='';poll()};
 $('#amin').onclick=()=>{$('#activity').classList.toggle('min');S.qmin=$('#activity').classList.contains('min');$('#amin').style.transform=S.qmin?'rotate(180deg)':'';save()};
 $('#finsel').onchange=e=>{S.finish=e.target.value;setSeg('#finish',S.finish);save();if(S.finish=='shutdown')toast('全部完成後會倒數 2 分鐘關機')};
@@ -315,17 +370,25 @@ $('#finish').onclick=e=>{const v=e.target.dataset.v;if(v){S.finish=v;setSeg('#fi
 $('#noshut').onclick=async()=>{await API.cancel_shutdown();toast('已取消關機')};
 const SN={queued:'等待中',running:'處理中',done:'完成',error:'失敗',cancelled:'已取消'};
 const KC=j=>j.kind=='rec'?['record','var(--red)']:j.kind=='dl'?['download','var(--cyan)']:j.kind?[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).icon||'sliders',GC[(TS&&TS.tools.find(t=>t.id==j.kind)||{}).group]||'var(--gray)']:['convert','var(--blue)'];
-let lastQ='',busy=false,recState={};
+let lastQ='',busy=false,recState={},seen={},wasBusy=false;
 async function poll(){const r=await API.status();const js=r.jobs;recState=r.rec||{};busy=js.some(j=>j.state=='queued'||j.state=='running');recUI();$('#noshut').style.display=r.shutdown?'':'none';
  if(S.finish!==undefined&&$('#finsel').value!=S.finish)$('#finsel').value=S.finish;
+ if(busy&&!wasBusy&&$('#activity').classList.contains('min'))$('#amin').click();
+ if(wasBusy&&!busy){const all=js.filter(j=>j.finished&&Date.now()/1000-j.finished<120);const ok=all.filter(j=>j.state=='done'),bad=all.filter(j=>j.state=='error');
+  if(bad.length)toast(`${bad.length} 個工作失敗，詳細原因在下方`,1);
+  else if(ok.length){const saved=ok.reduce((a,j)=>a+(j.in_size&&j.out_size&&!j.kind?Math.max(0,j.in_size-j.out_size):0),0);const last=ok[ok.length-1];
+   toast(`全部完成（${ok.length} 個）${saved>1<<20?'，省下 '+fmtSize(saved):''}`,0,last.output?['顯示位置',()=>API.reveal(last.output)]:null)}}
+ wasBusy=busy;
  const key=JSON.stringify(js);if(key==lastQ)return;lastQ=key;const act=js.filter(j=>j.state=='queued'||j.state=='running').length;
  $('#qcount').textContent=act?`${act} 個進行中`:js.length?'全部完成':'';
  $('#queue').innerHTML=js.length?js.slice().reverse().map(j=>{const rec=j.kind=='rec'&&j.state=='running';const [ic,col]=KC(j);
   const title=j.kind=='dl'?esc(j.label.replace(/^下載：/,'')||j.name):j.kind=='rec'?'螢幕錄影':`${esc(j.name)}<span class="mute"> → ${esc(j.label||TL(j.target))}</span>`;
   const sub=j.state=='running'?(rec?`<span class="err">● ${esc(j.speed)}</span>　${esc(j.msg)}`:[`${(j.progress*100).toFixed(0)}%`,j.speed,j.eta!=null&&j.progress>0.01?'剩 '+fmtT(j.eta):'',j.encoder].filter(Boolean).map(esc).join('　'))
-   :j.state=='done'?`<span class="ok">完成</span>　${j.elapsed} 秒${j.encoder?'　'+esc(j.encoder):''}`:j.state=='error'?`<span class="err">${esc(j.msg)}</span>`:SN[j.state];
+   :j.state=='done'?`<span class="ok">完成</span>　${sizeDelta(j)}${fmtT(Math.round(j.elapsed))||'不到 1 秒'}${j.encoder?'　'+esc(j.encoder):''}`:j.state=='error'?`<span class="err">${esc(j.msg)}</span>`:SN[j.state];
   return `<div class="q ${j.state}">${tile(ic,col,'md')}<div style="min-width:0"><div class="nm t" title="${esc(j.output||j.name)}">${title}</div><div class="s" title="${esc(j.state=='error'?j.msg:j.encoder)}">${sub}</div>${j.state=='running'&&!rec||j.state=='queued'?`<div class="prog"><i style="width:${(j.progress*100).toFixed(1)}%"></i></div>`:''}</div>
-  <div>${j.state=='queued'||j.state=='running'?`<button class="btn plain${rec?' danger':''}" data-c="${j.id}">${rec?'停止':'取消'}</button>`:j.state=='done'&&j.output?`<button class="btn plain" data-o="${esc(j.output)}">顯示位置</button>`:''}</div></div>`}).join(''):'<div class="empty" style="padding:14px">沒有工作</div>'}
+  <div class="acts">${j.state=='queued'||j.state=='running'?`<button class="btn plain${rec?' danger':''}" data-c="${j.id}">${rec?'停止':'取消'}</button>`
+   :j.state=='done'&&j.output?`<button class="btn plain" data-f="${esc(j.output)}">開啟</button><button class="btn icon" data-o="${esc(j.output)}" title="在檔案總管中顯示">${svg('folder')}</button>`
+   :(j.state=='error'||j.state=='cancelled')&&j.retry?`<button class="btn plain" data-rt="${j.id}">重試</button>`:''}</div></div>`}).join(''):'<div class="empty" style="padding:14px">沒有工作</div>'}
 let tick=0;setInterval(()=>{tick++;if(API&&(busy||recState.rec||tick%4==0))poll()},700);
 /* ---------- tools ---------- */
 const NEW=new Set(['v_social','v_fill','v_autosub','x_privacy','i_collage','v_frames','i_slideshow']);
@@ -344,7 +407,7 @@ async function addToolFiles(paths){if(!paths||!paths.length)return;if(tool.accep
 async function renderTFiles(){const disc=tool.accept.includes('disc');
  $('#t_fhead').innerHTML=(disc?'來源':'檔案')+'<span class="r">'+(disc?`<select id="t_drv" style="width:190px;padding-top:3px;padding-bottom:3px"><option value="">選擇光碟機…</option></select><button class="btn plain" id="t_dir">選擇資料夾</button>`
   :`<button class="btn plain" id="t_addf">${svg('plus')}加入檔案</button><button class="btn plain" id="t_addd">加入資料夾</button>${tfiles.length?'<button class="btn plain" id="t_clr">全部移除</button>':''}`)+'</span>';
- $('#t_list').innerHTML=tfiles.length?tfiles.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'disc',CATC[f.cat]||GC.disc,'md')}<span class="lab"><span class="nm" style="display:block" title="${esc(f.path)}">${esc(f.name)}</span>${f.size?`<small>${fmtSize(f.size)}</small>`:''}</span>
+ $('#t_list').innerHTML=tfiles.length?tfiles.map((f,i)=>`<div class="row ic">${tile(CATI[f.cat]||'disc',CATC[f.cat]||GC.disc,'md')}<span class="lab"><span class="nm" style="display:block" title="${esc(f.path)}">${esc(f.name)}</span>${f.size?`<small>${fmtSize(f.size)}${miText(f.path)?' · '+miText(f.path):''}</small>`:''}</span>
   <span class="val">${tool.together&&tfiles.length>1?`<span class="order"><button class="btn icon" data-u="${i}" title="上移">${svg('up')}</button><button class="btn icon" data-d="${i}" title="下移">${svg('down')}</button></span>`:''}<button class="btn icon" data-r="${i}" title="移除">${svg('x')}</button></span></div>`).join('')
   :`<div class="empty">${disc?'放入光碟後從上方選擇光碟機，<br>或選擇硬碟裡的 VIDEO_TS／BDMV 資料夾。':'將'+tool.accept.map(a=>ACC[a]).join('、')+'拖到這裡，或按「加入檔案」。'}</div>`;
  $('#t_fnote').textContent=tool.together&&!disc?'多個檔案會依清單順序合成一個，可以用箭頭調整順序。':'';
@@ -365,14 +428,16 @@ function renderForm(){const fs=tool.fields.filter(shown);$('#t_optwrap').style.d
   else if(f.type=='rect')inp=`<span class="fpick"><span class="nm">${v?esc(v.split(',').slice(2).join(' × '))+' 像素':'尚未框選'}</span><button class="btn tint" data-rect="${f.k}">在畫面上框選</button></span>`;
   else inp=`<input data-k="${f.k}" value="${esc(v)}" placeholder="${esc(f.placeholder||'')}">`;
   return `<div class="row"><span class="lab">${esc(f.label)}</span><span class="val">${inp}</span></div>`}).join('');
- let note='';if(tool.id=='v_autosub')note=TS.whisper?'第一次使用會自動下載辨識模型，之後完全離線。中文影片建議用「準確」。':'<span class="warn">目前的 FFmpeg 沒有語音辨識功能。</span>';
+ let note='';if(tool.id=='v_autosub')note=TS.whisper?('完全離線辨識。「快速」模型已內建；要更準確可選「準確」，第一次使用時下載一次即可。'+(PC.low?'<br><span class="warn">這台電腦效能較精簡，建議用「快速」，「最準」可能需要很久。</span>':'')):'<span class="warn">目前的 FFmpeg 沒有語音辨識功能。</span>';
  if(['i_watermark','v_wm_text'].includes(tool.id)&&!TS.font)note='<span class="warn">找不到中文字型。</span>';
  if(tool.id=='a_vocal')note='原理是消去左右聲道相同的聲音，對多數流行歌有效；現場錄音或單聲道效果有限。';
  if(tool.id=='v_stab')note='防手震需要先完整分析一次影片，時間約為一般轉檔的兩倍。';
  if(tool.id=='x_privacy')note='JPG、PNG 直接移除資訊、不重新壓縮；影片與音訊不重新編碼。';
  $('#t_note').innerHTML=note;updGo()}
 function updGo(){const b=$('#t_go');const n=tfiles.length;const disc=tool.accept.includes('disc');b.disabled=!n||(tool.together&&n<2&&!['i_slideshow','i_gif'].includes(tool.id))||(tool.id=='v_autosub'&&!TS.whisper);
- b.textContent=disc?'開始':tool.together?(n>1?`合成 ${n} 個檔案`:'開始'):n>1?`處理 ${n} 個檔案`:'開始'}
+ b.textContent=disc?'開始':tool.together?(n>1?`合成 ${n} 個檔案`:'開始'):n>1?`處理 ${n} 個檔案`:'開始';
+ const need=tool.together&&!['i_slideshow','i_gif'].includes(tool.id)?2:1;
+ $('#t_gohint').innerHTML=tool.id=='v_autosub'&&!TS.whisper?'這個 FFmpeg 版本不支援語音辨識':!n?(disc?'先選擇光碟機或資料夾':`先加入${need>1?'至少 2 個':''}${tool.accept.map(a=>ACC[a]).join('或')}`):n<need?'至少需要 2 個檔案':'按 <kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始';loadInfo(tfiles,()=>renderTFiles())}
 $('#t_form').addEventListener('change',e=>{const k=e.target.dataset.k;if(!k)return;TV[k]=e.target.value;if(tool.fields.some(f=>f.show&&k in f.show))renderForm()});
 $('#t_form').addEventListener('input',e=>{const k=e.target.dataset.k;if(k&&e.target.tagName!='SELECT')TV[k]=e.target.value});
 $('#t_form').addEventListener('click',async e=>{const t=e.target.closest('.sw,button');if(!t)return;
@@ -436,11 +501,16 @@ $('#w_rows').addEventListener('click',async e=>{const t=e.target.closest('.sw,[d
 /* ---------- formats ---------- */
 function ft(q){q=(q||'').toLowerCase().replace('.','');$('#ftb').innerHTML=FT.filter(r=>!q||r.cat.includes(q)||r.inputs.concat(r.outputs).some(e=>e.includes(q))).map(r=>`<tr><td><span class="chip" style="background:${CATC[r.key]||'var(--gray)'}">${r.cat}</span></td><td class="fx">${r.inputs.join(' ')}</td><td class="fx">${r.outputs.map(TL).join(' ')||'—'}</td><td>${r.engine}</td><td class="warn">${r.note}</td></tr>`).join('')||'<tr><td colspan=5 class="empty">找不到這個格式</td></tr>'}
 $('#fmtbtn').onclick=async()=>{if(!FT.length)FT=await API.formats();ft($('#q').value);$('#modal').classList.add('on');$('#q').focus()};
-$('#mclose').onclick=()=>$('#modal').classList.remove('on');$$('.modal').forEach(m=>m.onclick=e=>{if(e.target==m)m.classList.remove('on')});
+$('#mclose').onclick=()=>$('#modal').classList.remove('on');$$('.modal').forEach(m=>m.onclick=e=>{if(e.target==m){if(m.id=='amodal'){$('#aok').click();return}m.classList.remove('on')}});
 $('#q').oninput=e=>ft(e.target.value);
-document.addEventListener('keydown',e=>{if(e.key=='Escape')$$('.modal').forEach(m=>m.classList.remove('on'));if((e.ctrlKey||e.metaKey)&&e.key=='f'){e.preventDefault();$('#gsearch').focus()}});
+document.addEventListener('keydown',e=>{const c=e.ctrlKey||e.metaKey,inField=/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+ if(e.key=='Escape'){$$('.modal').forEach(m=>m.classList.remove('on'));if(document.activeElement==$('#gsearch')&&$('#gsearch').value){$('#gsearch').value='';$('#gsearch').dispatchEvent(new Event('input'))}}
+ if(c&&e.key=='f'){e.preventDefault();$('#gsearch').focus();$('#gsearch').select()}
+ if(c&&e.key=='o'){e.preventDefault();if($('#p-tools').classList.contains('on')&&tool&&!tool.accept.includes('disc'))$('#t_addf').click();else if(S.tab=='convert')$('#addf').click()}
+ if(c&&e.key=='Enter'){e.preventDefault();const b=$('#p-tools').classList.contains('on')?$('#t_go'):S.tab=='convert'?$('#go'):S.tab=='dl'?$('#d_go'):null;if(b&&!b.disabled)b.click()}});
 /* ---------- boot ---------- */
-window.addEventListener('pywebviewready',async()=>{API=window.pywebview.api;const r=await API.init();S=r.settings;TS=r.tools;if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();setSeg('#preset',S.preset);outUI();
+window.addEventListener('pywebviewready',async()=>{API=window.pywebview.api;const r=await API.init();S=r.settings;TS=r.tools;
+ PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');$('#aed').textContent=(r.edition||'試用版')+'・免費・沒有期限';document.title='轉檔工廠（'+(r.edition||'試用版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
  sw('hw',S.hwaccel);sw('fastcopy',S.fastcopy!==false);sw('loudnorm',S.loudnorm);$('#finsel').value=S.finish||'sound';
  if(S.qmin){$('#activity').classList.add('min');$('#amin').style.transform='rotate(180deg)'}
  if((S.dl||{}).out_dir)$('#d_dir').textContent=S.dl.out_dir;if(S.dl){if(S.dl.quality)$('#d_q').value=S.dl.quality;sw('d_subs',S.dl.subs);sw('d_pl',S.dl.playlist);if(S.dl.thumb===false)sw('d_thumb',false)}

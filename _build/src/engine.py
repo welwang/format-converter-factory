@@ -3,11 +3,33 @@ import os, sys, re, json, time, shutil, subprocess, threading, tempfile, uuid
 from concurrent.futures import ThreadPoolExecutor
 
 NOWIN = 0x08000000 if os.name == 'nt' else 0
+LOWPRI = NOWIN | (0x00004000 if os.name == 'nt' else 0)     # BELOW_NORMAL_PRIORITY_CLASS: the PC stays responsive while converting
 
 def base_dir():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
+
+def E_isurl(s): return bool(re.match(r'^[a-z]+://', s or ''))
+
+_DATA = None
+def data_dir():
+    """Where settings, logs and downloaded models go: next to the program (portable use, e.g. on a USB drive),
+    or %LOCALAPPDATA%\\ZhuanDangGongChang when that folder is read-only (e.g. copied into Program Files)."""
+    global _DATA
+    if _DATA: return _DATA
+    for d in (base_dir(), os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'ZhuanDangGongChang')):
+        try:
+            os.makedirs(d, exist_ok=True)
+            t = os.path.join(d, '.zdgc_write_test')
+            with open(t, 'w') as fh: fh.write('1')
+            os.remove(t); _DATA = d; return d
+        except OSError: continue
+    _DATA = tempfile.gettempdir(); return _DATA
+
+def bundled(*parts):
+    """Path inside the program's own tools folder (read-only resources shipped with the app)."""
+    return os.path.join(base_dir(), 'tools', *parts)
 
 def find_tool(name):
     for p in (os.path.join(base_dir(), 'tools', name + '.exe'), os.path.join(base_dir(), 'tools', name)):
@@ -105,12 +127,38 @@ def expand(paths):
             out.append(p)
     return out
 
+_RESERVED = set(); _RES_LOCK = threading.Lock()
 def unique_path(path, avoid=()):
+    """Free output name.  Names handed out are reserved for the session, so two jobs running at the same time
+    (e.g. clip.mov and clip.mkv both -> clip.mp4) can never write into the same file."""
     root, ext = os.path.splitext(path); n = 1; cand = path
     avoid = {os.path.normcase(os.path.abspath(a)) for a in avoid}
-    while os.path.exists(cand) or os.path.normcase(os.path.abspath(cand)) in avoid:
-        cand = f'{root} ({n}){ext}'; n += 1
+    with _RES_LOCK:
+        while True:
+            key = os.path.normcase(os.path.abspath(cand))
+            if not os.path.exists(cand) and key not in avoid and key not in _RESERVED: break
+            cand = f'{root} ({n}){ext}'; n += 1
+        _RESERVED.add(key)
     return cand
+
+def log_dir():
+    for d in (os.path.join(data_dir(), 'logs'), os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ZhuanDangGongChang', 'logs')):
+        try: os.makedirs(d, exist_ok=True); return d
+        except OSError: continue
+    return tempfile.gettempdir()
+
+_LOG_LOCK = threading.Lock()
+def log(msg):
+    try:
+        p = os.path.join(log_dir(), 'zdgc.log')
+        with _LOG_LOCK:
+            if os.path.isfile(p) and os.path.getsize(p) > 2_000_000: os.replace(p, p + '.1')
+            with open(p, 'a', encoding='utf-8') as fh: fh.write(time.strftime('%Y-%m-%d %H:%M:%S ') + msg.rstrip() + '\n')
+    except Exception: pass
+
+def log_error(j):
+    err = (getattr(j, '_err', '') or '').strip()
+    log(f'FAIL {j.tool or j.target} {j.files} -> {j.output}\n  msg: {j.msg}\n  opt: {j.opt}\n  stderr: ' + err[-1500:].replace('\n', '\n    '))
 
 def flatten(im, bg=(255, 255, 255)):
     """RGB copy with transparency composited onto white (plain convert('RGB') turns it black)."""
@@ -126,7 +174,7 @@ _PROBE = {}; _PROBE_LOCK = threading.Lock()
 def probe_info(path):
     """dict(dur, streams, height, akbps, acodec) via ffmpeg -i (no ffprobe needed, saves ~210 MB).
     Cached per file+mtime so one job never runs ffmpeg -i twice on the same file."""
-    if not FFMPEG: return dict(dur=0.0, streams=[], height=0, width=0, akbps=0, acodec='')
+    if not FFMPEG: return dict(dur=0.0, streams=[], height=0, width=0, akbps=0, acodec='', hdr='')
     try: key = (os.path.abspath(path), os.path.getmtime(path), os.path.getsize(path))
     except OSError: key = None
     if key:
@@ -137,19 +185,30 @@ def probe_info(path):
     m = re.search(r'Duration: (\d+):(\d+):([\d.]+)', r.stderr)
     if m: dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
     streams = [(t.lower(), c) for t, c in re.findall(r'Stream #\d+:\d+.*?: (Video|Audio|Subtitle): (\w+)', r.stderr)]
-    h = w = akbps = 0; acodec = ''
+    h = w = akbps = 0; acodec = ''; hdr = ''
     for line in r.stderr.splitlines():
         if not h and ': Video:' in line and 'attached pic' not in line:
             mm = re.search(r', (\d{2,5})x(\d{2,5})', line)
             if mm: w = int(mm.group(1)); h = int(mm.group(2))
+            # e.g. "yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67" -> HLG (iPhone), smpte2084 -> HDR10 / PQ
+            if 'arib-std-b67' in line: hdr = 'hlg'
+            elif 'smpte2084' in line: hdr = 'pq'
         if not acodec and ': Audio:' in line:
             acodec = re.search(r'Audio: (\w+)', line).group(1)
             mm = re.search(r'(\d+) kb/s', line)
             if mm: akbps = int(mm.group(1))
-    res = dict(dur=dur, streams=streams, height=h, width=w, akbps=akbps, acodec=acodec)
+    res = dict(dur=dur, streams=streams, height=h, width=w, akbps=akbps, acodec=acodec, hdr=hdr)
     if key:
         with _PROBE_LOCK: _PROBE[key] = res
     return res
+
+def hdr_filters(path):
+    """HDR (HLG / PQ) -> SDR BT.709 tone mapping, so iPhone / Android HDR clips don't come out grey and washed out
+    when re-encoded to 8-bit H.264. Empty list for normal SDR sources."""
+    k = probe_info(path).get('hdr')
+    if not k: return []
+    return ['zscale=t=linear:npl=100', 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0',
+            'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p']
 
 def probe(path):
     i = probe_info(path); return i['dur'], i['streams']
@@ -157,24 +216,47 @@ def probe(path):
 def probe_duration(path):
     return probe_info(path)['dur']
 
+def mem_gb():
+    """Installed RAM in GB (Windows), used to scale parallel work on low-end office PCs."""
+    try:
+        import ctypes
+        class M(ctypes.Structure):
+            _fields_ = [('l', ctypes.c_ulong), ('load', ctypes.c_ulong), ('total', ctypes.c_ulonglong), ('avail', ctypes.c_ulonglong),
+                        ('tp', ctypes.c_ulonglong), ('ap', ctypes.c_ulonglong), ('tv', ctypes.c_ulonglong), ('av', ctypes.c_ulonglong), ('ae', ctypes.c_ulonglong)]
+        m = M(); m.l = ctypes.sizeof(M); ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)); return m.total / 2 ** 30
+    except Exception:
+        try: return os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / 2 ** 30
+        except Exception: return 8.0
+
+def low_end():
+    """Typical office PC: 4 threads or fewer, or 8 GB RAM or less."""
+    return (os.cpu_count() or 4) <= 4 or mem_gb() <= 8.5
+
 def auto_workers():
-    """Parallel ffmpeg jobs (each ffmpeg already uses many threads)."""
+    """Parallel ffmpeg jobs (each ffmpeg already uses many threads). One at a time on small PCs keeps them responsive."""
     n = os.cpu_count() or 4
+    if n <= 4 or mem_gb() <= 6: return 1
     return max(2, min(4, n // 4))
 
 def light_workers():
     """Parallel jobs for mostly single-threaded work (images, PDF, documents, e-books)."""
     n = os.cpu_count() or 4
+    if mem_gb() <= 6: return 2
     return max(2, min(6, n // 2))
 
+# LibreOffice / Calibre each take 300-600 MB of RAM: limit how many run together
+OFFICE_SLOTS = threading.Semaphore(1 if mem_gb() <= 8.5 else 2)
+
 _HW = None; _HW_BUSY = False; _HW_LOCK = threading.Lock()
-_HW_CACHE = os.path.join(base_dir(), 'hw_cache.json')
+_HW_CACHE = None   # set lazily (data_dir) - see detect_hw
 def detect_hw():
     """Probe GPU encoders once; result cached for 7 days so later launches skip 3 ffmpeg test runs."""
     global _HW, _HW_BUSY
     with _HW_LOCK:
       if _HW is not None and not _HW_BUSY: return _HW
       _HW_BUSY = True; _HW = []
+      global _HW_CACHE
+      _HW_CACHE = _HW_CACHE or os.path.join(data_dir(), 'hw_cache.json')
       try:
           c = json.load(open(_HW_CACHE, encoding='utf-8'))
           if FFMPEG and c.get('ffmpeg') == os.path.getmtime(FFMPEG) and time.time() - c.get('t', 0) < 7 * 86400:
@@ -256,7 +338,11 @@ class Job:
         self.id = uuid.uuid4().hex[:8]; self.files = files; self.target = target; self.opt = dict(opt)
         self.merge = merge; self.state = 'queued'; self.progress = 0.0; self.speed = ''; self.eta = None
         self.msg = ''; self.output = ''; self.proc = None; self.cancelled = False; self.started = None
-        self.encoder = ''; self.elapsed = 0.0
+        self.encoder = ''; self.elapsed = 0.0; self.out_size = 0; self.finished = 0
+        self.in_size = 0
+        for f in files:
+            try: self.in_size += os.path.getsize(f) if os.path.isfile(f) else 0
+            except OSError: pass
         self.cat = 'tool' if tool else classify(files[0])[0]
         self.tool = tool; self.label = label
 
@@ -264,7 +350,16 @@ class Job:
         nm = os.path.basename(self.files[0].rstrip('\\/')) or self.files[0]
         if self.merge and len(self.files) > 1: nm += f' 等 {len(self.files)} 個'
         return dict(id=self.id, name=nm, target=self.target, label=self.label or '', kind=self.tool or '', state=self.state, progress=round(self.progress, 3), speed=self.speed,
-                    eta=self.eta, msg=self.msg, output=self.output, encoder=self.encoder, elapsed=round(self.elapsed, 2))
+                    eta=self.eta, msg=self.msg, output=self.output, encoder=self.encoder, elapsed=round(self.elapsed, 2),
+                    in_size=self.in_size, out_size=self.out_size, finished=self.finished, retry=self.tool not in ('rec',))
+
+    def measure(self):
+        p = self.output
+        try:
+            if p and os.path.isfile(p): self.out_size = os.path.getsize(p)
+            elif p and os.path.isdir(p): self.out_size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(p) for f in fs)
+        except OSError: pass
+        self.finished = time.time()
 
 
 class Engine:
@@ -282,6 +377,7 @@ class Engine:
         return unique_path(os.path.join(folder, f'{stem}.{ext}'), avoid=job.files)
 
     def submit(self, files, target, opt, merge=False):
+        files = [os.path.abspath(f) for f in files]
         jobs = [Job(files, target, opt, True)] if merge else [Job([f], target, opt) for f in files]
         with self.lock:
             for j in jobs:
@@ -291,6 +387,7 @@ class Engine:
         return [j.id for j in jobs]
 
     def submit_tool(self, tool, files, opt, label, together=False, heavy=True):
+        files = [f if E_isurl(f) else os.path.abspath(f) for f in files]
         jobs = [Job(files, tool, opt, True, tool=tool, label=label)] if together else [Job([f], tool, opt, tool=tool, label=label) for f in files]
         with self.lock:
             for j in jobs:
@@ -326,6 +423,7 @@ class Engine:
         if j.cancelled: return
         j.state = 'running'; j.started = time.time()
         try:
+            self._check_space(j)
             ext = classify(j.files[0])[1]
             if j.cat == 'tool':
                 import tools; tools.run(self, j)
@@ -361,6 +459,32 @@ class Engine:
                 try: os.remove(j.output)
                 except Exception: pass
         j.elapsed = time.time() - j.started
+        j.measure()
+        if j.state == 'error': log_error(j)
+
+    def _check_space(self, j):
+        """Fail early with a clear message instead of a half-written file when the target drive is (almost) full."""
+        folder = j.opt.get('out_dir') or (os.path.dirname(j.files[0]) if os.path.isfile(j.files[0]) else '')
+        if not folder or not os.path.isdir(folder): return
+        try: free = shutil.disk_usage(folder).free
+        except OSError: return
+        need = 200 * 2 ** 20 + (j.in_size if j.target in ('extract', 'wav', 'flac', 'avi', 'bmp', 'tiff') else 0)
+        if free < need:
+            raise RuntimeError(f'磁碟空間不足：{os.path.splitdrive(os.path.abspath(folder))[0] or folder} 只剩 {free / 2 ** 20:.0f} MB，'
+                               f'請清出空間或在「儲存位置」改存到其他磁碟')
+
+    def retry(self, jid):
+        """Run a failed / cancelled job again with exactly the same settings."""
+        old = self.jobs.get(jid)
+        if not old or old.state not in ('error', 'cancelled', 'done'): return None
+        j = Job(old.files, old.target, old.opt, old.merge, tool=old.tool, label=old.label)
+        if old.tool == 'dl': return 'dl'
+        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in __import__('tools').HEAVY)
+        with self.lock:
+            self.jobs[j.id] = j; self.order.append(j.id)
+            if old.state != 'done': self.order.remove(jid)
+            (self.pool if heavy else self.light).submit(self._run, j)
+        return j.id
 
     # ---------- ffmpeg ----------
     def _ffmpeg(self, j):
@@ -382,7 +506,7 @@ class Engine:
                 cmd += ['-filter_complex', fc, '-map', '[a]']
             else:
                 h = int(o.get('height') or 0) or 720
-                pre = ''.join(f'[{i}:v:0]scale=-2:{h}:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:{h}:(ow-iw)/2:0,setsar=1,fps=30,format=yuv420p[v{i}];[{i}:a:0]aresample=48000[a{i}];' for i in range(n))
+                pre = ''.join(f'[{i}:v:0]' + ''.join(x + ',' for x in hdr_filters(j.files[i])) + f'scale=-2:{h}:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:{h}:(ow-iw)/2:0,setsar=1,fps=30,format=yuv420p[v{i}];[{i}:a:0]aresample=48000[a{i}];' for i in range(n))
                 fc = pre + ''.join(f'[v{i}][a{i}]' for i in range(n)) + f'concat=n={n}:v=1:a=1[v][a]'
                 cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '[a]']
         else:
@@ -397,6 +521,7 @@ class Engine:
         info = probe_info(j.files[0])
         if h and not j.merge and info['height'] and h >= info['height'] and t != 'gif':
             h = 0                                    # never upscale: bigger file, no extra detail
+        if not j.merge: vf += hdr_filters(j.files[0])
         if h and not j.merge and t != 'gif': vf.append(f'scale=-2:{h}')
         if t in AUDIO:
             if self._can_copy_audio(j, t, info):
@@ -409,7 +534,7 @@ class Engine:
                 cmd += ['-vn'] + aa; j.encoder = aa[1]
         elif t == 'gif':
             gh = h or 480; fps = 12 if o.get('preset') == 'small' else 15
-            cmd += ['-vf', f'fps={fps},scale=-2:{gh}:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a', '-an']
+            cmd += ['-vf', ''.join(x + ',' for x in vf if not x.startswith('scale=')) + f'fps={fps},scale=-2:{gh}:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a', '-an']
             j.encoder = 'gif'
         elif self._can_copy(j, t):
             cmd += ['-map', '0', '-c', 'copy'] + (['-movflags', '+faststart'] if t in ('mp4', 'mov') else [])
@@ -489,7 +614,7 @@ class Engine:
         return has_v
 
     def _exec(self, j, cmd, dur, cwd=None, base=0.0, span=1.0):
-        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=NOWIN, cwd=cwd)
+        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=LOWPRI, cwd=cwd)
         err = []
         th = threading.Thread(target=lambda: err.extend(j.proc.stderr.readlines()), daemon=True); th.start()
         t0 = time.time()
@@ -651,8 +776,8 @@ class Engine:
         j.encoder = 'PDFium'
 
     def _proc(self, j, cmd, what, cwd=None):
-        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=NOWIN, cwd=cwd)
-        o, e = j.proc.communicate()
+        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=LOWPRI, cwd=cwd)
+        o, e = j.proc.communicate(); j._err = e or o
         if j.cancelled: raise InterruptedError
         if j.proc.returncode != 0: raise RuntimeError(f'{what} 失敗：' + ((e or o).strip().splitlines() or [''])[-1][:200])
 
@@ -670,7 +795,10 @@ class Engine:
     def _ebook(self, j):
         if CALIBRE:
             out = self.out_path(j, j.files[0], j.target); j.output = out
-            self._proc(j, [CALIBRE, j.files[0], out], 'Calibre'); j.encoder = 'Calibre'; return
+            with OFFICE_SLOTS:
+                if j.cancelled: raise InterruptedError
+                self._proc(j, [CALIBRE, j.files[0], out], 'Calibre')
+            j.encoder = 'Calibre'; return
         return self._doc(j)
 
     def _archive(self, j):
@@ -694,7 +822,18 @@ class Engine:
 
     def _sub(self, j):
         out = self.out_path(j, j.files[0], j.target); j.output = out
-        cmd = [FFMPEG, '-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', j.files[0]]
+        src = j.files[0]; tmp = None
+        if j.cat == 'subtitle':
+            # Big5 / GBK / UTF-16 subtitles are common; ffmpeg only reads UTF-8, so normalise first
+            import tools
+            tmp = tempfile.mkdtemp(prefix='zdgc_s_'); src = os.path.join(tmp, 'in' + os.path.splitext(j.files[0])[1].lower())
+            with open(src, 'w', encoding='utf-8') as fh: fh.write(tools.read_text_any(j.files[0]))
+        try: self._sub_run(j, src, out)
+        finally:
+            if tmp: shutil.rmtree(tmp, ignore_errors=True)
+
+    def _sub_run(self, j, src, out):
+        cmd = [FFMPEG, '-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', src]
         if j.cat == 'video': cmd += ['-map', '0:s:0']
         self._proc(j, cmd + [out], '字幕轉換（影片需內含字幕軌）'); j.encoder = 'FFmpeg'
 
@@ -719,6 +858,11 @@ class Engine:
 
     def _office(self, j):
         if not SOFFICE: raise RuntimeError('需要 LibreOffice 才能轉這個格式')
+        with OFFICE_SLOTS:
+            if j.cancelled: raise InterruptedError
+            return self._office_run(j)
+
+    def _office_run(self, j):
         out = self.out_path(j, j.files[0], j.target); j.output = out
         tmp = tempfile.mkdtemp(prefix='zdgc_')
         ext = classify(j.files[0])[1]; t = j.target
@@ -735,7 +879,7 @@ class Engine:
             for attempt in (conv, t) if conv != t else (t,):
                 j.proc = subprocess.Popen([SOFFICE, f'-env:UserInstallation={self._lo_profile()}', '--headless', '--norestore', '--nolockcheck',
                                            '--convert-to', attempt, '--outdir', tmp, j.files[0]],
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NOWIN)
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=LOWPRI)
                 j.proc.communicate()
                 if j.cancelled: raise InterruptedError
                 res = [f for f in os.listdir(tmp) if f.lower().endswith('.' + t)]

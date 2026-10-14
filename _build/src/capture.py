@@ -40,7 +40,7 @@ class Recorder:
 
     def _cmd(self, o, out, mode, hw):
         fps = int(o.get('fps') or 30)
-        c = [E.FFMPEG, '-hide_banner', '-y', '-v', 'error', '-thread_queue_size', '1024']
+        c = [E.FFMPEG, '-hide_banner', '-y', '-v', 'error']
         region = o.get('region') or ''
         if mode == 'dda':
             args = f"ddagrab=output_idx={int(o.get('monitor') or 0)}:framerate={fps}:draw_mouse={1 if o.get('mouse', True) else 0}"
@@ -54,7 +54,7 @@ class Recorder:
                 x, y, w, h = [int(v) for v in region.split(',')]; c += ['-offset_x', str(x), '-offset_y', str(y), '-video_size', f'{w // 2 * 2}x{h // 2 * 2}']
             c += ['-i', 'desktop']; vf = 'pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p'
         mics = [m for m in (o.get('audio') or []) if m]
-        for m in mics: c += ['-thread_queue_size', '1024', '-rtbufsize', '256M', '-f', 'dshow', '-audio_buffer_size', '50', '-i', f'audio={m}']
+        for m in mics: c += ['-rtbufsize', '256M', '-f', 'dshow', '-audio_buffer_size', '50', '-i', f'audio={m}']
         fc = f'[0:v]{vf}[v]'
         if len(mics) > 1: fc += ';' + ''.join(f'[{i + 1}:a]' for i in range(len(mics))) + f'amix=inputs={len(mics)}:normalize=0[a]'
         c += ['-filter_complex', fc, '-map', '[v]'] + (['-map', '1:a'] if len(mics) == 1 else ['-map', '[a]'] if mics else [])
@@ -123,7 +123,7 @@ class Recorder:
                 os.remove(self.tmp); j.output = self.final
             else:
                 j.output = self.tmp
-            j.state = 'done'; j.progress = 1.0; j.msg = '完成'; j.eta = 0
+            j.state = 'done'; j.progress = 1.0; j.msg = '完成'; j.eta = 0; j.measure()
             return j.id
 
 def hotkey_loop(callback, vk=0x78, mods=0x0002 | 0x0004):
@@ -144,8 +144,9 @@ def ytdlp():
     return E.find_tool('yt-dlp')
 
 def deno():
-    p = E.find_tool('deno')
-    return p if p and os.path.isfile(p) else shutil.which('deno')
+    for p in (E.bundled('deno.exe'), os.path.join(E.data_dir(), 'tools', 'deno.exe')):
+        if os.path.isfile(p): return p
+    return shutil.which('deno')
 
 DENO_URL = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
 
@@ -154,9 +155,11 @@ def ensure_deno(j):
     p = deno()
     if p: return p
     if os.name != 'nt': return None
-    dest = os.path.join(E.base_dir(), 'tools')
-    try: os.makedirs(dest, exist_ok=True)
-    except OSError: return None
+    dest = E.bundled()
+    try:
+        os.makedirs(dest, exist_ok=True); open(os.path.join(dest, '.w'), 'w').close(); os.remove(os.path.join(dest, '.w'))
+    except OSError:
+        dest = os.path.join(E.data_dir(), 'tools'); os.makedirs(dest, exist_ok=True)
     j.speed = '第一次使用，下載 YouTube 解析元件…'
     tmp = os.path.join(dest, 'deno.zip.part')
     try:
@@ -203,8 +206,9 @@ class Downloader:
             j.state = 'running'; j.started = time.time()
             try: self._dl(j, url, o, exe)
             except InterruptedError: j.state = 'cancelled'; j.msg = '已取消'
-            except Exception as e: j.state = 'error'; j.msg = str(e)[:300]
+            except Exception as e: j.state = 'error'; j.msg = str(e)[:300]; E.log_error(j)
             j.elapsed = time.time() - j.started
+            if j.state != 'done': j.measure()
 
     def _dl(self, j, url, o, exe):
         folder = o.get('out_dir') or downloads_dir(); os.makedirs(folder, exist_ok=True)
@@ -222,7 +226,7 @@ class Downloader:
             if d: cmd += ['--js-runtimes', f'deno:{d}']
         cmd.append(url)
         files = []; err = []
-        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=NOWIN)
+        j.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=E.LOWPRI)
         th = threading.Thread(target=lambda: err.extend(j.proc.stderr.readlines()), daemon=True); th.start()
         part = 0
         for line in j.proc.stdout:
@@ -254,7 +258,7 @@ class Downloader:
             raise RuntimeError(msg[:220] + hint)
         j.encoder = 'yt-dlp' + (f'（{len(files)} 個檔案）' if len(files) > 1 else '')
         if len(files) > 1: j.output = os.path.dirname(files[0])
-        j.state = 'done'; j.progress = 1.0; j.msg = '完成'; j.eta = 0; j.speed = ''
+        j.state = 'done'; j.progress = 1.0; j.msg = '完成'; j.eta = 0; j.speed = ''; j.measure()
 
     def update(self):
         exe = ytdlp()
@@ -268,7 +272,7 @@ class Watcher:
     """Polls rule folders; converts new files once they stop growing. Never touches the originals."""
     def __init__(self, api):
         self.api = api; self.rules = []; self.seen = {}; self.sizes = {}; self.lock = threading.Lock()
-        self.state_file = os.path.join(E.base_dir(), 'watch_state.json')
+        self.state_file = os.path.join(E.data_dir(), 'watch_state.json')
         try: self.seen = json.load(open(self.state_file, encoding='utf-8'))
         except Exception: self.seen = {}
         threading.Thread(target=self._loop, daemon=True).start()

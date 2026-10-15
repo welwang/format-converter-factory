@@ -1,4 +1,4 @@
-param([switch]$Resume)
+﻿param([switch]$Resume)
 $ErrorActionPreference='Stop'
 $work=[IO.Path]::GetFullPath($PSScriptRoot)
 $install=Join-Path $work 'installer-validation\四維八德 測試安裝'
@@ -7,11 +7,11 @@ $appKey='Software\Microsoft\Windows\CurrentVersion\Uninstall\{7B1E6C2A-9D41-4E7B
 foreach($key in ('HKCU:\'+$appKey),('HKLM:\'+$appKey),('HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{7B1E6C2A-9D41-4E7B-A3F0-ZDGC20261013}_is1')){
  if(Test-Path -LiteralPath $key){
   $existing=Get-ItemProperty -LiteralPath $key
-  if(-not $Resume -or [IO.Path]::GetFullPath($existing.InstallLocation).TrimEnd('\') -ne $install -or $existing.DisplayVersion -ne '2.3.2'){throw '已存在相同產品的其他安裝記錄，未執行測試安裝以免覆寫。'}
+  if(-not $Resume -or [IO.Path]::GetFullPath($existing.InstallLocation).TrimEnd('\') -ne $install -or $existing.DisplayVersion -ne '2.3.3'){throw '已存在相同產品的其他安裝記錄，未執行測試安裝以免覆寫。'}
  }
 }
-$setup=Join-Path $work 'release\輸出\四維八德_2.3.2_離線安裝程式.exe'
-$testGroup='四維八德 測試 2.3.2'
+$setup=Join-Path $work 'release\輸出\四維八德_2.3.3_離線安裝程式.exe'
+$testGroup='四維八德 測試 2.3.3'
 $args=@('/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/NORESTART',('/GROUP="'+$testGroup+'"'),'/TASKS=""',('/DIR="'+$install+'"'),('/LOG="'+(Join-Path $work 'installer-validation.log')+'"'))
 if(-not $Resume){
  $p=Start-Process -FilePath $setup -ArgumentList $args -WindowStyle Hidden -PassThru
@@ -36,6 +36,11 @@ foreach($binary in $setup,(Join-Path $install '四維八德.exe'),(Join-Path $in
  if($LASTEXITCODE -ne 0){throw '安裝後內嵌圖示不符'}
 }
 Copy-Item -LiteralPath (Join-Path $work 'release\smoke-fixtures') -Destination $install -Recurse -Force
+ # 原生 PDF→PDF 的煙霧素材必須真的在：煙霧測試會送出一個 PDF→PDF 工作並要求由 C 引擎（qpdf）完成。
+ # 只靠目錄複製不夠可靠（實測曾漏掉這個檔），所以再明確複製一次並立刻驗證。
+ $pdfFixture=Join-Path $install 'smoke-fixtures\smoke.pdf'
+ Copy-Item -LiteralPath (Join-Path $work 'release\smoke-fixtures\smoke.pdf') -Destination $pdfFixture -Force
+ if(-not (Test-Path -LiteralPath $pdfFixture)){throw '安裝後缺少 smoke-fixtures\smoke.pdf，PDF 煙霧測試無法進行'}
 $exe=Join-Path $install '四維八德.exe'
 $smoke=Join-Path $work 'installed-window-smoke.json'
 $p=Start-Process -FilePath $exe -ArgumentList @('--shell-smoke-test',('"'+$smoke+'"')) -WindowStyle Hidden -PassThru
@@ -56,6 +61,6 @@ if(Test-Path -LiteralPath $shortcutPath){throw '解除安裝仍留有測試捷�
 foreach($name in '四維八德.exe','swbd-core.exe','_internal','tools'){
  if(Test-Path -LiteralPath (Join-Path $install $name)){throw ('解除安裝仍留有產品檔案：'+$name)}
 }
-$report=[ordered]@{version='2.3.2';installed=$true;hashes_match=$true;unicode_path=$true;native_window=$result;pdf_passed=$results.Count;uninstall=$true;new_icon_resources=$true;shortcut_icon_target=$true;private_data_included=$false;setup_sha256=(Get-FileHash -LiteralPath $setup).Hash;setup_bytes=(Get-Item -LiteralPath $setup).Length}
+$report=[ordered]@{version='2.3.3';installed=$true;hashes_match=$true;unicode_path=$true;native_window=$result;pdf_passed=$results.Count;uninstall=$true;new_icon_resources=$true;shortcut_icon_target=$true;private_data_included=$false;setup_sha256=(Get-FileHash -LiteralPath $setup).Hash;setup_bytes=(Get-Item -LiteralPath $setup).Length}
 $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $work 'package-validation.json') -Encoding UTF8
 Write-Host '安裝、中文含空白路徑、C 視窗、12 項 PDF、雜湊與解除安裝全部通過。'

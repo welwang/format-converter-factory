@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$CandidateRoot)
+﻿param([Parameter(Mandatory=$true)][string]$CandidateRoot)
 $ErrorActionPreference='Stop'
 $python=Join-Path $PSScriptRoot 'venv\Scripts\python.exe'
 & $python (Join-Path $PSScriptRoot 'prune_payload.py') $CandidateRoot

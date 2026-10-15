@@ -21,7 +21,8 @@ int main(int argc,char **argv) {
   else if(!strcmp(m,"cancel")){eng_cancel(e,jget_str(q,"id",""));r=jbool(1);}
   else if(!strcmp(m,"retry")){char *id=eng_retry(e,jget_str(q,"id",""));r=id?jstr(id):jnew(J_NULL);free(id);}
   else if(!strcmp(m,"clear")){eng_clear_done(e);r=jbool(1);}
-  else if(!strcmp(m,"quit")){json_free(q);puts("true");fflush(stdout);break;}
+  else if(!strcmp(m,"handles"))r=jbool(eng_handles(jget_str(q,"cat",""),jget_str(q,"target",""),jget_bool(q,"merge",0),jget(q,"opt")));
+   else if(!strcmp(m,"quit")){json_free(q);puts("true");fflush(stdout);break;}
   else r=jnew(J_NULL);
   char *text=json_dump(r);puts(text?text:"null");fflush(stdout);free(text);json_free(r);json_free(q);
  }

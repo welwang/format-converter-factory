@@ -10,7 +10,7 @@ import disk_tools as DT
 import file_actions as FA
 
 SETTINGS = os.path.join(E.data_dir(), 'settings.json')
-VERSION = '2.3.2'
+VERSION = '2.3.3'
 EDITION = '開源版'
 TITLE = f'四維八德（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,
@@ -141,6 +141,13 @@ class Api:
         acc = T.TOOL[tool]['accept']
         return [d for d in self.describe(paths) if d['cat'] in acc]
 
+    def tool_job_opt(self, tool, params):
+        """C++ 接手 run_tool 之後，設定相關的部分仍由 Python 提供：選項 = base_opt + params，
+        並記住這個工具上次的設定（與 run_tool 原本做的完全相同）。"""
+        opt = dict(self.base_opt(), **(params or {}))
+        self._s.setdefault('tool_opts', {})[tool] = W.clean_settings({k: v for k, v in (params or {}).items() if k not in ('rect', 'actions', 'pfx')})
+        self.save_settings({})
+        return opt
     def run_tool(self, tool, paths, params):
         t = T.TOOL[tool]
         if len(paths)<t.get('min_files',2 if t.get('together') else 1):raise ValueError('加入的檔案數不足')

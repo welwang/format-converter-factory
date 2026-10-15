@@ -1,5 +1,5 @@
 /* Platform layer: threads, processes, files.  Windows is the product; POSIX lets the engine be built and
-   tested on Linux with gcc.  All paths and strings are UTF-8. */
+   tested on Linux with a POSIX C++ compiler.  All paths and strings are UTF-8. */
 #ifndef SWBD_PLAT_H
 #define SWBD_PLAT_H
 #include <stddef.h>

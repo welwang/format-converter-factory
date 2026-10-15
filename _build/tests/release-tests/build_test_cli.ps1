@@ -1,8 +1,18 @@
 $ErrorActionPreference='Stop'
-$vsPath = & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe' -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-$shellPath=Join-Path $PSScriptRoot 'shell'
-$compileLines=@('@echo off',('call "'+$vsPath+'\VC\Auxiliary\Build\vcvars64.bat" >nul'),('cd /d "'+$shellPath+'"'), 'cl /nologo /utf-8 /MT /O2 /W3 /std:c11 engine_test_cli.c engine.c plat.c json.c /Fo"out\\" /Fe"out\engine-test.exe" /link user32.lib advapi32.lib shell32.lib')
-$batch=Join-Path $shellPath 'out\compile_test.cmd'
-[IO.File]::WriteAllText($batch,($compileLines -join "`r`n")+"`r`n",[Text.UTF8Encoding]::new($false))
-& cmd.exe /d /c $batch
+# Builds the Windows engine test driver (engine-test.exe).
+# The compile rules live in exactly one place now: shell\CMakeLists.txt (C++20).
+$shell=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\shell'))
+$cmake=(Get-Command cmake.exe -ErrorAction SilentlyContinue).Source
+if(-not $cmake){$cmake=Join-Path ${env:ProgramFiles} 'CMake\bin\cmake.exe'}
+if(-not (Test-Path -LiteralPath $cmake)){throw 'CMake not found'}
+$build=Join-Path $shell 'out\cmake'
+& $cmake -S $shell -B $build 2>&1 | Out-Null
+if($LASTEXITCODE -ne 0){throw 'CMake configure failed'}
+& $cmake --build $build --config Release --target engine-test 2>&1 | Out-Null
 if($LASTEXITCODE -ne 0){throw 'C test driver compilation failed'}
+$exe=Get-ChildItem -LiteralPath $build -Recurse -Filter 'engine-test.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if(-not $exe){throw 'engine-test.exe not found'}
+$out=Join-Path $shell 'out'
+New-Item -ItemType Directory -Force -Path $out | Out-Null
+Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $out 'engine-test.exe') -Force
+Write-Host "engine-test.exe built: $out\engine-test.exe"

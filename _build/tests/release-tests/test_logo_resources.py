@@ -4,7 +4,23 @@ import struct, hashlib, json, sys
 import pefile
 
 ROOT = Path(__file__).resolve().parent
-ico = (ROOT / 'logo.ico').read_bytes()
+
+
+def find_ico():
+    """發行用的 logo.ico 在 _build\\logo.ico；測試資料夾本身沒有它。
+    先前這裡直接讀 ROOT/'logo.ico'，因此 test_installer.ps1 一定會在這一行崩潰。
+    命令列可明確指定（第 2 個參數），否則依序找幾個常見位置。"""
+    if len(sys.argv) > 2 and Path(sys.argv[2]).is_file():
+        return Path(sys.argv[2])
+    candidates = [ROOT / 'logo.ico', ROOT.parent.parent / 'logo.ico',
+                  Path('E:/四維八德/_build/logo.ico'), ROOT / 'release' / 'logo.ico']
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise SystemExit('找不到 logo.ico（找過 %s）' % ', '.join(str(c) for c in candidates))
+
+
+ico = find_ico().read_bytes()
 reserved, kind, count = struct.unpack_from('<HHH', ico)
 assert reserved == 0 and kind == 1 and count > 0
 expected = set()

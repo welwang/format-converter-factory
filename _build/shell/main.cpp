@@ -1,12 +1,12 @@
 /*
- * 四維八德 — native main program (C, Win32 + Microsoft Edge WebView2).
+ * 四維八德 — native main program (C++20, Win32 + Microsoft Edge WebView2).
  *
  * Native window and conversion orchestration. This executable owns:
  * the window, the WebView2 page, drag-and-drop with real paths, file / folder dialogs, a single
  * running instance (files opened later are handed to the open window), window position memory,
  * the taskbar flash and the WebView2 runtime check.
  *
- * engine.c handles generic media, documents, archives and ebooks; api.c combines native and
+ * engine.cpp handles generic media, documents, archives and ebooks; api.cpp combines native and
  * Python jobs. Images, PDF, toolbox tools and workflows run in the windowless swbd-core.exe.
  * The two talk over anonymous pipes with one
  * UTF-8 line per message:
@@ -17,12 +17,12 @@
  *   core  -> shell  R <json>                 message for the page (answers, dropped files)
  *                   S <id>\t<op>\t<args...>  window operation; id 0 = no answer wanted
  *
- * Build: _build\shell\build_shell.ps1 (MSVC + WebView2 SDK, static WebView2 loader).
+ * Build: _build\shell\CMakeLists.txt (C++20, MSVC + WebView2 SDK, static WebView2 loader).
+ *        _build\shell\build_shell.ps1 fetches the SDK and drives that CMake build.
  */
 #define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0A00
 #define WINVER 0x0A00
-#define COBJMACROS
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <windowsx.h>
@@ -36,9 +36,11 @@
 #include <wchar.h>
 #include <limits.h>
 #include <powrprof.h>
+#include <wrl/client.h>     /* ComPtr: RAII for the COM objects the shell creates itself */
 #include "WebView2.h"
 #include "api.h"
 #include "json.h"
+#include "swbd/bridge.hpp"   /* the C++ core that takes methods over from the Python component */
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -306,7 +308,7 @@ static BOOL start_core(int argc, wchar_t **argv, BOOL pipes, HANDLE *process)
 /* ------------------------------------------------------------------ page messages */
 static void post_json(const wchar_t *json)
 {
-    if (g_webview) ICoreWebView2_PostWebMessageAsJson(g_webview, json);
+    if (g_webview) g_webview->PostWebMessageAsJson(json);
 }
 
 static void maybe_ready(void)
@@ -404,24 +406,22 @@ static void dialog_save(wbuf *out, const wchar_t *name, const wchar_t *filters)
 
 static void dialog_folder(wbuf *out)
 {
-    IFileOpenDialog *dlg = NULL;
+    Microsoft::WRL::ComPtr<IFileOpenDialog> dlg;
     wb_str(out, L"[");
-    if (SUCCEEDED(CoCreateInstance(&CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER, &IID_IFileOpenDialog, (void **)&dlg))) {
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_IFileOpenDialog, (void **)dlg.GetAddressOf()))) {
         DWORD opts = 0;
-        IFileOpenDialog_GetOptions(dlg, &opts);
-        IFileOpenDialog_SetOptions(dlg, opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-        if (SUCCEEDED(IFileOpenDialog_Show(dlg, g_hwnd))) {
-            IShellItem *item = NULL;
-            if (SUCCEEDED(IFileOpenDialog_GetResult(dlg, &item))) {
+        dlg->GetOptions(&opts);
+        dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+        if (SUCCEEDED(dlg->Show(g_hwnd))) {
+            Microsoft::WRL::ComPtr<IShellItem> item;
+            if (SUCCEEDED(dlg->GetResult(item.GetAddressOf()))) {
                 PWSTR path = NULL;
-                if (SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &path))) {
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
                     wb_json(out, path);
                     CoTaskMemFree(path);
                 }
-                IShellItem_Release(item);
             }
         }
-        IFileOpenDialog_Release(dlg);
     }
     wb_str(out, L"]");
 }
@@ -478,68 +478,100 @@ static void handle_core_line(char *line)
     free(line);
 }
 
-/* ------------------------------------------------------------------ WebView2 COM handlers (C) */
-typedef struct { ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandlerVtbl *lpVtbl; } EnvHandler;
-typedef struct { ICoreWebView2CreateCoreWebView2ControllerCompletedHandlerVtbl *lpVtbl; } CtrlHandler;
-typedef struct { ICoreWebView2WebMessageReceivedEventHandlerVtbl *lpVtbl; } MsgHandler;
-typedef struct { ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandlerVtbl *lpVtbl; } ScriptHandler;
+/* ------------------------------------------------------------------ WebView2 COM handlers (C++)
+   The shell's WebView2 callbacks are COM objects.  In C they were static vtbl structs and function
+   pointers, because the WebView2 headers only expose that shape in C mode; in C++ they are classes
+   that implement the interfaces directly.  They are static objects that live as long as the program,
+   so AddRef / Release keep the original no-op behaviour. */
+namespace {
 
-/* The handlers are static objects that live as long as the program: AddRef / Release do nothing. */
-#define STATIC_REFS(name, T) \
-    static ULONG STDMETHODCALLTYPE name##_addref(T *This) { (void)This; return 1; } \
-    static ULONG STDMETHODCALLTYPE name##_release(T *This) { (void)This; return 1; }
-STATIC_REFS(env, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler)
-STATIC_REFS(ctrl, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler)
-STATIC_REFS(msg, ICoreWebView2WebMessageReceivedEventHandler)
-STATIC_REFS(script, ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler)
-static HRESULT qi(void *This, REFIID riid, void **out, REFIID own)
+template <class TInterface>
+class StaticHandler : public TInterface {
+public:
+    explicit StaticHandler(const IID *own_iid) : own_iid_(own_iid) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **out) override
+    {
+        if (!out) return E_POINTER;
+        if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, *own_iid_)) { *out = static_cast<TInterface *>(this); return S_OK; }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
+    ULONG STDMETHODCALLTYPE Release() override { return 1; }
+private:
+    const IID *own_iid_;
+};
+
+class EnvHandler final : public StaticHandler<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler> {
+public:
+    EnvHandler() : StaticHandler<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(&IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr, ICoreWebView2Environment *env) override;
+};
+
+class CtrlHandler final : public StaticHandler<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler> {
+public:
+    CtrlHandler() : StaticHandler<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(&IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr, ICoreWebView2Controller *controller) override;
+};
+
+class MsgHandler final : public StaticHandler<ICoreWebView2WebMessageReceivedEventHandler> {
+public:
+    MsgHandler() : StaticHandler<ICoreWebView2WebMessageReceivedEventHandler>(&IID_ICoreWebView2WebMessageReceivedEventHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2 *sender, ICoreWebView2WebMessageReceivedEventArgs *args) override;
+};
+
+class ScriptHandler final : public StaticHandler<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler> {
+public:
+    ScriptHandler() : StaticHandler<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(&IID_ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr, LPCWSTR id) override;
+};
+
+class NavHandler final : public StaticHandler<ICoreWebView2NavigationStartingEventHandler> {
+public:
+    NavHandler() : StaticHandler<ICoreWebView2NavigationStartingEventHandler>(&IID_ICoreWebView2NavigationStartingEventHandler) {}
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2 *sender, ICoreWebView2NavigationStartingEventArgs *args) override;
+};
+
+EnvHandler    g_envHandler;
+CtrlHandler   g_ctrlHandler;
+MsgHandler    g_msgHandler;
+ScriptHandler g_scriptHandler;
+NavHandler    g_navHandler;
+
+}   /* namespace */
+
+HRESULT STDMETHODCALLTYPE ScriptHandler::Invoke(HRESULT hr, LPCWSTR id)
 {
-    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, own)) { *out = This; return S_OK; }
-    *out = NULL; return E_NOINTERFACE;
+    (void)hr; (void)id;
+    return S_OK;
 }
-
-static HRESULT STDMETHODCALLTYPE env_qi(ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *This, REFIID riid, void **out)
-{ return qi(This, riid, out, &IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler); }
-static HRESULT STDMETHODCALLTYPE ctrl_qi(ICoreWebView2CreateCoreWebView2ControllerCompletedHandler *This, REFIID riid, void **out)
-{ return qi(This, riid, out, &IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler); }
-static HRESULT STDMETHODCALLTYPE msg_qi(ICoreWebView2WebMessageReceivedEventHandler *This, REFIID riid, void **out)
-{ return qi(This, riid, out, &IID_ICoreWebView2WebMessageReceivedEventHandler); }
-static HRESULT STDMETHODCALLTYPE script_qi(ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler *This, REFIID riid, void **out)
-{ return qi(This, riid, out, &IID_ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler); }
-
-static HRESULT STDMETHODCALLTYPE script_done(ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler *This, HRESULT hr, LPCWSTR id)
-{ (void)This; (void)hr; (void)id; return S_OK; }
 
 /* Files dropped on the page arrive as ICoreWebView2File objects: the only way to get their real paths. */
 static void collect_dropped(ICoreWebView2WebMessageReceivedEventArgs *args)
 {
-    ICoreWebView2WebMessageReceivedEventArgs2 *args2 = NULL;
-    if (FAILED(ICoreWebView2WebMessageReceivedEventArgs_QueryInterface(args, &IID_ICoreWebView2WebMessageReceivedEventArgs2, (void **)&args2))) return;
-    ICoreWebView2ObjectCollectionView *objs = NULL;
+    Microsoft::WRL::ComPtr<ICoreWebView2WebMessageReceivedEventArgs2> args2;
+    if (FAILED(args->QueryInterface(IID_ICoreWebView2WebMessageReceivedEventArgs2, (void **)args2.GetAddressOf()))) return;
+    Microsoft::WRL::ComPtr<ICoreWebView2ObjectCollectionView> objs;
     wbuf list = {0};
     wb_str(&list, L"[");
     BOOL first = TRUE;
-    if (SUCCEEDED(ICoreWebView2WebMessageReceivedEventArgs2_get_AdditionalObjects(args2, &objs)) && objs) {
+    if (SUCCEEDED(args2->get_AdditionalObjects(objs.GetAddressOf())) && objs) {
         UINT32 count = 0;
-        ICoreWebView2ObjectCollectionView_get_Count(objs, &count);
+        objs->get_Count(&count);
         for (UINT32 i = 0; i < count; i++) {
-            IUnknown *obj = NULL;
-            if (FAILED(ICoreWebView2ObjectCollectionView_GetValueAtIndex(objs, i, &obj)) || !obj) continue;
-            ICoreWebView2File *file = NULL;
-            if (SUCCEEDED(IUnknown_QueryInterface(obj, &IID_ICoreWebView2File, (void **)&file)) && file) {
+            Microsoft::WRL::ComPtr<IUnknown> obj;
+            if (FAILED(objs->GetValueAtIndex(i, obj.GetAddressOf())) || !obj) continue;
+            Microsoft::WRL::ComPtr<ICoreWebView2File> file;
+            if (SUCCEEDED(obj->QueryInterface(IID_ICoreWebView2File, (void **)file.GetAddressOf())) && file) {
                 LPWSTR path = NULL;
-                if (SUCCEEDED(ICoreWebView2File_get_Path(file, &path)) && path) {
+                if (SUCCEEDED(file->get_Path(&path)) && path) {
                     if (!first) wb_str(&list, L",");
                     wb_json(&list, path); first = FALSE;
                     CoTaskMemFree(path);
                 }
-                ICoreWebView2File_Release(file);
             }
-            IUnknown_Release(obj);
         }
-        ICoreWebView2ObjectCollectionView_Release(objs);
     }
-    ICoreWebView2WebMessageReceivedEventArgs2_Release(args2);
     wb_str(&list, L"]");
     if (!first) send_files(&list);
     free(list.p);
@@ -560,15 +592,15 @@ static BOOL trusted_ui_uri(const wchar_t *uri)
     return MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,bytes,-1,decoded,MAX_PATH)>0 && !_wcsicmp(decoded,g_pagePath);
 }
 
-static HRESULT STDMETHODCALLTYPE msg_invoke(ICoreWebView2WebMessageReceivedEventHandler *This, ICoreWebView2 *sender, ICoreWebView2WebMessageReceivedEventArgs *args)
+HRESULT STDMETHODCALLTYPE MsgHandler::Invoke(ICoreWebView2 *sender, ICoreWebView2WebMessageReceivedEventArgs *args)
 {
-    (void)This; (void)sender;
+    (void)sender;
     LPWSTR source = NULL;
-    BOOL trusted = SUCCEEDED(ICoreWebView2WebMessageReceivedEventArgs_get_Source(args, &source)) && trusted_ui_uri(source);
+    BOOL trusted = SUCCEEDED(args->get_Source(&source)) && trusted_ui_uri(source);
     if (source) CoTaskMemFree(source);
     if (!trusted) return S_OK;
     LPWSTR msg = NULL;
-    if (FAILED(ICoreWebView2WebMessageReceivedEventArgs_TryGetWebMessageAsString(args, &msg)) || !msg) return S_OK;
+    if (FAILED(args->TryGetWebMessageAsString(&msg)) || !msg) return S_OK;
     if (!wcscmp(msg, L"drop")) collect_dropped(args);
     else if (!wcscmp(msg, L"hello")) { g_pageReady = TRUE; g_readySent = FALSE; maybe_ready(); }
     else if (msg[0] == L'{') {        /* {"id":n,"m":"...","a":[...]}: the C engine first, the Python component for the rest */
@@ -611,15 +643,11 @@ static const wchar_t *BRIDGE_JS =
     L"document.addEventListener('DOMContentLoaded',()=>window.chrome.webview.postMessage('hello'));"
     L"})();";
 
-typedef struct { ICoreWebView2NavigationStartingEventHandlerVtbl *lpVtbl; } NavHandler;
-STATIC_REFS(nav, ICoreWebView2NavigationStartingEventHandler)
-static HRESULT STDMETHODCALLTYPE nav_qi(ICoreWebView2NavigationStartingEventHandler *This, REFIID iid, void **out)
-{ return qi(This, iid, out, &IID_ICoreWebView2NavigationStartingEventHandler); }
-static HRESULT STDMETHODCALLTYPE nav_invoke(ICoreWebView2NavigationStartingEventHandler *This, ICoreWebView2 *sender, ICoreWebView2NavigationStartingEventArgs *args)
+HRESULT STDMETHODCALLTYPE NavHandler::Invoke(ICoreWebView2 *sender, ICoreWebView2NavigationStartingEventArgs *args)
 {
-    (void)This; (void)sender; LPWSTR uri = NULL;
-    BOOL trusted = SUCCEEDED(ICoreWebView2NavigationStartingEventArgs_get_Uri(args, &uri)) && trusted_ui_uri(uri);
-    if (!trusted) ICoreWebView2NavigationStartingEventArgs_put_Cancel(args, TRUE);
+    (void)sender; LPWSTR uri = NULL;
+    BOOL trusted = SUCCEEDED(args->get_Uri(&uri)) && trusted_ui_uri(uri);
+    if (!trusted) args->put_Cancel(TRUE);
     if (uri) CoTaskMemFree(uri); return S_OK;
 }
 static const wchar_t *SMOKE_JS =
@@ -633,70 +661,72 @@ static const wchar_t *SMOKE_JS =
     L"if(ids.length!==2||ids[0]===ids[1]||!ids.some(id=>id.startsWith('x'))||!ids.some(id=>!id.startsWith('x')))throw Error('C/Python routing failed');"
     L"let done=false;for(let n=0;n<100;n++){const s=await a.status();const jobs=s.jobs.filter(j=>ids.includes(j.id));if(jobs.length===2&&jobs.every(j=>j.state==='done')){done=true;break}if(jobs.some(j=>j.state==='error'))throw Error(JSON.stringify(jobs));await new Promise(t=>setTimeout(t,150))}"
     L"if(!done)throw Error('mixed job completion timeout');const preview=await a.preview(b+'/smoke-fixtures/video.mp4',.5);if(!preview.src)throw Error('native preview missing');"
+    /* 原生 PDF→PDF（qpdf）也要在出貨版本裡成立：工作 id 必須是 C 引擎的（x 開頭）、
+       狀態完成、encoder 由 qpdf 負責。任何一項不符就讓整個煙霧測試失敗。
+       刻意不新增報告欄位：C 版與 C++ 版的報告要逐欄相同（gate_compare.py 是全結構比對）。 */
+    L"const pdfIds=await a.start([{path:b+'/smoke-fixtures/smoke.pdf',target:'pdf'}],{out_dir:b+'/smoke-output',preset:'balanced',resource_mode:'quiet'},false);"
+    L"if(pdfIds.length!==1||!pdfIds[0].startsWith('x'))throw Error('pdf job was not taken over by the C engine: '+JSON.stringify(pdfIds));"
+    L"let pdfJob=null;for(let n=0;n<100;n++){const s=await a.status();const j=s.jobs.filter(x=>x.id===pdfIds[0])[0];if(j&&j.state==='done'){pdfJob=j;break}if(j&&j.state==='error')throw Error('pdf job failed: '+JSON.stringify(j));await new Promise(t=>setTimeout(t,150))}"
+    L"if(!pdfJob)throw Error('pdf job completion timeout');"
+    L"if(!(pdfJob.encoder||'').startsWith('qpdf'))throw Error('pdf job did not run natively: '+pdfJob.encoder);"
+    /* 「交回 Python」那條路徑也要在出貨版本裡成立：非無損壓縮刻意留在 Python，所以工作 id
+       不可以是 C 引擎的（x 開頭），而且轉交之後仍然要跑得出結果。 */
+    L"const rIds=await a.run_tool('p_compress',[b+'/smoke-fixtures/smoke.pdf'],{level:'balanced',out_dir:b+'/smoke-output',resource_mode:'quiet'});"
+    L"if(!rIds||rIds.length!==1||String(rIds[0]).startsWith('x'))throw Error('relay failed: '+JSON.stringify(rIds));"
+    L"let rJob=null;for(let n=0;n<150;n++){const s=await a.status();const j=s.jobs.filter(x=>x.id===rIds[0])[0];if(j&&j.state==='done'){rJob=j;break}if(j&&j.state==='error')throw Error('relay job failed: '+JSON.stringify(j));await new Promise(t=>setTimeout(t,150))}"
+    L"if(!rJob)throw Error('relay timeout');"
     L"await new Promise(t=>setTimeout(t,1800));"
     L"window.chrome.webview.postMessage(JSON.stringify({_swbd_smoke:true,ok:true,version:r.version,platform:window.pywebview.platform,formats:f.length,mixed_jobs:ids.length,preview:true,error_rejection:true}));"
     L"}catch(e){window.chrome.webview.postMessage(JSON.stringify({_swbd_smoke:true,ok:false,error:String(e)}))}});";
 
-static HRESULT STDMETHODCALLTYPE ctrl_invoke(ICoreWebView2CreateCoreWebView2ControllerCompletedHandler *This, HRESULT hr, ICoreWebView2Controller *controller)
+HRESULT STDMETHODCALLTYPE CtrlHandler::Invoke(HRESULT hr, ICoreWebView2Controller *controller)
 {
-    (void)This;
-    static ICoreWebView2WebMessageReceivedEventHandlerVtbl msgVtbl = { msg_qi, msg_addref, msg_release, msg_invoke };
-    static MsgHandler msgHandler = { &msgVtbl };
-    static ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandlerVtbl scriptVtbl = { script_qi, script_addref, script_release, script_done };
-    static ScriptHandler scriptHandler = { &scriptVtbl };
-
     if (FAILED(hr) || !controller) {
         fail_box(L"無法建立視窗元件（WebView2）。請重新安裝四維八德，或安裝 Microsoft Edge WebView2 執行環境。");
         DestroyWindow(g_hwnd);
         return S_OK;
     }
+    controller->AddRef();
     g_controller = controller;
-    ICoreWebView2Controller_AddRef(controller);
-    ICoreWebView2Controller_get_CoreWebView2(controller, &g_webview);
+    controller->get_CoreWebView2(&g_webview);
 
-    ICoreWebView2Settings *settings = NULL;
-    if (SUCCEEDED(ICoreWebView2_get_Settings(g_webview, &settings)) && settings) {
-        ICoreWebView2Settings_put_AreDefaultContextMenusEnabled(settings, FALSE);
-        ICoreWebView2Settings_put_AreDevToolsEnabled(settings, FALSE);
-        ICoreWebView2Settings_put_IsStatusBarEnabled(settings, FALSE);
-        ICoreWebView2Settings_put_IsZoomControlEnabled(settings, FALSE);
-        ICoreWebView2Settings_Release(settings);
+    Microsoft::WRL::ComPtr<ICoreWebView2Settings> settings;
+    if (SUCCEEDED(g_webview->get_Settings(settings.GetAddressOf())) && settings) {
+        settings->put_AreDefaultContextMenusEnabled(FALSE);
+        settings->put_AreDevToolsEnabled(FALSE);
+        settings->put_IsStatusBarEnabled(FALSE);
+        settings->put_IsZoomControlEnabled(FALSE);
     }
     RECT rc; GetClientRect(g_hwnd, &rc);
-    ICoreWebView2Controller_put_Bounds(controller, rc);
+    controller->put_Bounds(rc);
 
     EventRegistrationToken token;
-    static ICoreWebView2NavigationStartingEventHandlerVtbl navVtbl = { nav_qi, nav_addref, nav_release, nav_invoke };
-    static NavHandler navHandler = { &navVtbl };
     swprintf(g_pagePath, MAX_PATH, L"%s\\_internal\\ui\\index.html", g_baseDir);
-    ICoreWebView2_add_NavigationStarting(g_webview, (ICoreWebView2NavigationStartingEventHandler *)&navHandler, &token);
-    ICoreWebView2_add_WebMessageReceived(g_webview, (ICoreWebView2WebMessageReceivedEventHandler *)&msgHandler, &token);
-    ICoreWebView2_AddScriptToExecuteOnDocumentCreated(g_webview, BRIDGE_JS, (ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler *)&scriptHandler);
+    g_webview->add_NavigationStarting(&g_navHandler, &token);
+    g_webview->add_WebMessageReceived(&g_msgHandler, &token);
+    g_webview->AddScriptToExecuteOnDocumentCreated(BRIDGE_JS, &g_scriptHandler);
     if (g_smoke) {
         wbuf test = {0}; wb_str(&test,L"window.__swbdSmokeBase=");wb_json(&test,g_baseDir);wb_str(&test,L";");wb_str(&test,SMOKE_JS);
-        ICoreWebView2_AddScriptToExecuteOnDocumentCreated(g_webview, test.p, (ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler *)&scriptHandler);free(test.p);
+        g_webview->AddScriptToExecuteOnDocumentCreated(test.p, &g_scriptHandler);free(test.p);
     }
 
     wchar_t page[MAX_PATH], url[MAX_PATH * 3];
     DWORD n = MAX_PATH * 3;
     swprintf(page, MAX_PATH, L"%s\\_internal\\ui\\index.html", g_baseDir);
     if (FAILED(UrlCreateFromPathW(page, url, &n, 0))) swprintf(url, MAX_PATH * 3, L"file:///%s", page);
-    ICoreWebView2_Navigate(g_webview, url);
-    ICoreWebView2Controller_MoveFocus(controller, COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+    g_webview->Navigate(url);
+    controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
     return S_OK;
 }
 
-static HRESULT STDMETHODCALLTYPE env_invoke(ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *This, HRESULT hr, ICoreWebView2Environment *env)
+HRESULT STDMETHODCALLTYPE EnvHandler::Invoke(HRESULT hr, ICoreWebView2Environment *env)
 {
-    (void)This;
-    static ICoreWebView2CreateCoreWebView2ControllerCompletedHandlerVtbl ctrlVtbl = { ctrl_qi, ctrl_addref, ctrl_release, ctrl_invoke };
-    static CtrlHandler ctrlHandler = { &ctrlVtbl };
     if (FAILED(hr) || !env) {
         fail_box(L"無法啟動視窗元件（WebView2）。請重新安裝四維八德。");
         DestroyWindow(g_hwnd);
         return S_OK;
     }
-    ICoreWebView2Environment_CreateCoreWebView2Controller(env, g_hwnd, (ICoreWebView2CreateCoreWebView2ControllerCompletedHandler *)&ctrlHandler);
+    env->CreateCoreWebView2Controller(g_hwnd, &g_ctrlHandler);
     return S_OK;
 }
 
@@ -814,10 +844,10 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
     case WM_SIZE:
-        if (g_controller) { RECT rc; GetClientRect(hwnd, &rc); ICoreWebView2Controller_put_Bounds(g_controller, rc); }
+        if (g_controller) { RECT rc; GetClientRect(hwnd, &rc); g_controller->put_Bounds(rc); }
         return 0;
     case WM_MOVE:
-        if (g_controller) ICoreWebView2Controller_NotifyParentWindowPositionChanged(g_controller);
+        if (g_controller) g_controller->NotifyParentWindowPositionChanged();
         return 0;
     case WM_GETMINMAXINFO: {
         UINT dpi = GetDpiForWindow(hwnd);
@@ -883,7 +913,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_DESTROY:
         save_placement();
-        if (g_controller) { ICoreWebView2Controller_Close(g_controller); ICoreWebView2Controller_Release(g_controller); g_controller = NULL; }
+        if (g_controller) { g_controller->Close(); g_controller->Release(); g_controller = NULL; }
         if (g_coreIn) { CloseHandle(g_coreIn); g_coreIn = NULL; }   /* the core sees end of input and exits */
         if (g_coreProcess && WaitForSingleObject(g_coreProcess, 3000) == WAIT_TIMEOUT) TerminateProcess(g_coreProcess, 1);
         PostQuitMessage(g_smoke ? g_smokeExit : 0);
@@ -989,6 +1019,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         char *base = utf8_from_wide(g_baseDir, -1), *data = utf8_from_wide(g_dataDir, -1);
         api_host host = { host_send_core, host_post_page, host_set_title, host_flash, host_keep_awake, host_finish_action };
         api_init(base, data, &host);        /* the C engine: its workers and the window monitor start here */
+        if (swbd_cpp_init(base, data)) {     /* the C++ core answers the methods it has registered */
+            api_cpp_busy_probe();            /* let taken-over methods ask whether Python is busy */
+            api_cpp_system_facts();          /* and let them read the C engine's system facts */
+            api_cpp_py_call();               /* and let them ask Python for settings-derived options */
+            api_cpp_tool_submit();           /* and let them submit native tool jobs */
+            char note[96];
+            snprintf(note, sizeof note, "C++ core ready: %d method(s) taken over", swbd_cpp_method_count());
+            log_line(note);
+        } else log_line("C++ core unavailable; every method stays in the Python component");
         free(base); free(data);
     }
     CloseHandle(CreateThread(NULL, 0, core_reader, NULL, 0, NULL));
@@ -997,10 +1036,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     if (!GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH)) wcscpy(local, g_dataDir);
     if (g_smoke) swprintf(userData, MAX_PATH, L"%s\\webview-test-profile", g_dataDir);
     else swprintf(userData, MAX_PATH, L"%s\\SiWeiBaDe\\WebView2", local);
-    static ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandlerVtbl envVtbl = { env_qi, env_addref, env_release, env_invoke };
-    static EnvHandler envHandler = { &envVtbl };
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(fixedFolder[0] ? fixedFolder : NULL, userData, NULL,
-                                                          (ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler *)&envHandler);
+                                                          &g_envHandler);
     if (FAILED(hr)) {
         fail_box(L"無法啟動視窗元件（WebView2）。請重新安裝四維八德。");
         return 1;

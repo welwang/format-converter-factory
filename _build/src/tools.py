@@ -699,6 +699,46 @@ def _ensure_vad():
     if have: return have
     return None
 
+_ASCII_MODEL_LOCK = threading.Lock()
+_ASCII_MODEL_LINK = None
+
+def ascii_model_path(path):
+    """whisper.cpp opens the model with a narrow fopen, so a model living under a non-ASCII path
+    (e.g. E:\\四維八德\\tools\\models) makes the ffmpeg whisper filter fail with
+    "failed to open ... ggml-base.bin".  Windows 8.3 short names are not generated on every volume,
+    so expose the model *directory* through an ASCII directory junction instead of copying the
+    150 MB file; if junctions are unavailable, copy the single file once.
+
+    Junction safety: never use shutil.rmtree() here — it would recurse into the target and delete
+    the real models.  os.rmdir() removes only the link."""
+    if not path or path.isascii(): return path
+    if os.name != 'nt': return path
+    global _ASCII_MODEL_LINK
+    base = os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()
+    if not base or not base.isascii(): base = tempfile.gettempdir()
+    if not base or not base.isascii(): return path          # no ASCII place to link through
+    link = os.path.join(base, 'SiWeiBaDe', 'models-link')
+    with _ASCII_MODEL_LOCK:
+        try:
+            os.makedirs(os.path.dirname(link), exist_ok=True)
+            target = os.path.join(link, os.path.basename(path))
+            if not os.path.isfile(target):
+                try:
+                    if os.path.isdir(link): os.rmdir(link)   # link only; never rmtree
+                except OSError: return path
+                subprocess.run(['cmd', '/c', 'mklink', '/J', link, os.path.dirname(path)],
+                               check=True, capture_output=True, creationflags=E.NOWIN)
+            if os.path.isfile(target):
+                _ASCII_MODEL_LINK = link
+                return target
+        except Exception: pass
+    try:                                                      # last resort: one file, copied once
+        dst = os.path.join(os.path.dirname(link), os.path.basename(path))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if not os.path.isfile(dst) or os.path.getsize(dst) != os.path.getsize(path): shutil.copy2(path, dst)
+        return dst
+    except Exception: return path
+
 def to_trad(text):
     try:
         import zhconv; return zhconv.s2twp(text)
@@ -711,12 +751,12 @@ def whisper_srt(eng, j, src, o, base=0.0, span=1.0):
     if not whisper_ok(): raise RuntimeError('這個 FFmpeg 版本沒有內建語音辨識（需要 FFmpeg 8 以上的 full 版）')
     if not has_audio(src): raise RuntimeError('檔案裡沒有聲音')
     if o.get('model') == 'medium' and E.mem_gb() < 6: raise RuntimeError('記憶體較少，請使用「快速」或「準確」模型，避免系統過度使用分頁檔')
-    model = ensure_model(j, o.get('model', 'base'))
+    model = ascii_model_path(ensure_model(j, o.get('model', 'base')))
     lang = o.get('lang', 'zh'); lang = 'zh' if lang == 'yue' else lang   # whisper.cpp has no separate Cantonese in older models
     d = info(src)['dur']
     tmp = tmpdir()
     try:
-        vad = ensure_vad()
+        vad = ensure_vad(); vad = ascii_model_path(vad) if vad else vad
         maxlen = 22 if lang in ('zh', 'ja', 'ko', 'yue') else 42
         # VAD cuts the audio at real pauses -> better sentence boundaries and no "hallucinated" text in silence
         variants = []

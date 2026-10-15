@@ -1,8 +1,8 @@
-$ErrorActionPreference='Stop'
-$root=$PSScriptRoot
-$source=Get-Content -LiteralPath (Join-Path $root 'shell\main.c') -Raw -Encoding UTF8
+﻿$ErrorActionPreference='Stop'
+$root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$source=Get-Content -LiteralPath (Join-Path $root 'shell\main.cpp') -Raw -Encoding UTF8
 $begin=$source.IndexOf('static BOOL trusted_ui_uri(')
-$end=$source.IndexOf('static HRESULT STDMETHODCALLTYPE msg_invoke(', $begin)
+$end=$source.IndexOf('HRESULT STDMETHODCALLTYPE MsgHandler::Invoke(', $begin)
 if($begin -lt 0 -or $end -lt 0){throw '找不到來源函式'}
 $function=$source.Substring($begin,$end-$begin)
 $prefix=@'

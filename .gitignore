@@ -45,6 +45,13 @@ autosync/state/
 /_build/shell/*.log
 /_build/shell/*.obj
 /_build/shell/*.res
+
+# 方法級 C++ 接手層（2026-10-15）與架構文件；建置產物與測試報告不入版控
+!/_build/cpp/
+/_build/cpp/build/
+/_build/cpp/out/
+/_build/cpp/tests/equivalence.json
+!/_build/docs/
 !/source/
 /source/*
 !/source/來源清單.json
@@ -53,3 +60,13 @@ autosync/state/
 
 !/_build/prune_payload.py
 !/_build/packing-prune.json
+
+# Public source and documentation; generated test data stays local.
+/_build/docs/*
+!/_build/docs/架構與驗證.md
+/_build/tests/release-tests/*/
+!/_build/tests/release-tests/*.py
+!/_build/tests/release-tests/*.ps1
+!/_build/tests/release-tests/*.cjs
+/_build/tests/shell/
+/_build/tests/release-tests/*.json

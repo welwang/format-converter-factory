@@ -4,6 +4,7 @@
 #include "engine.h"
 #include "json.h"
 #include "plat.h"
+#include "swbd/bridge.hpp"   /* the C++ core answers the methods it has taken over */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,21 @@ static pending *calls;
 static plat_mutex *cm;
 static plat_cond *cc;
 static unsigned call_seq;
+
+/* 有些方法是 C 自己發起的（monitor 要顯示成品、存設定…）：先問 C++ 核心有沒有接手，
+   沒有才轉 Python。這樣 C++ 的接手範圍就不限於「頁面送進來的方法」。 */
+static jval *core_call(const char *method, jval *args);
+static jval *cpp_or_core(const char *method, jval *args)
+{
+    if (swbd_cpp_has(method)) {
+        char *text = swbd_cpp_call(method, args);
+        json_free(args);
+        jval *r = text ? json_parse(text) : NULL;
+        if (text) swbd_cpp_free(text);
+        return r;
+    }
+    return core_call(method, args);
+}
 
 /* blocking call from a worker thread; returns the whole reply object {"id","ok","r"|"e"} or NULL */
 static jval *core_call(const char *method, jval *args)
@@ -140,7 +156,7 @@ static jval *start_jobs(const jval *items, const jval *opt, int merge)
         if (merge)        /* one merged job per target, as before */
             for (size_t k = i + 1; k < n; k++)
                 if (!done[k] && !strcmp(jget_str(items->items[k], "target", ""), target)) { jarr_push(files, jstr(jget_str(items->items[k], "path", ""))); done[k] = 1; }
-        if (eng_handles(cat, target)) {
+        if (eng_handles(cat, target, merge, opt)) {
             jval *got = eng_submit(E, files, target, opt, merge);
             for (size_t k = 0; k < got->len; k++) jarr_push(ids, json_clone(got->items[k]));
             json_free(got);
@@ -169,6 +185,16 @@ static const char *NATIVE[] = { "describe", "formats", "media_info", "hwinfo", "
                                 "retry", "compare_job", "preview", "cancel_shutdown", "disk_preview", "disk_launch", "cleanup_scan", "cleanup_execute", NULL };
 
 static int in(const char *const *l, const char *s) { for (; *l; l++) if (!strcmp(*l, s)) return 1; return 0; }
+
+/* The C++ core replies in exactly the envelope Python uses ({"ok":true,"r":...} / {"ok":false,"e":...}),
+   so relay() keeps the wire format to the page identical no matter which side did the work. */
+static void answer_cpp(const jval *id, const char *m, const jval *args)
+{
+    char *text = swbd_cpp_call(m, args);
+    jval *r = text ? json_parse(text) : NULL;
+    if (text) swbd_cpp_free(text);
+    relay(id, r);
+}
 
 static void handle(void *arg)
 {
@@ -208,9 +234,13 @@ static void handle(void *arg)
         H.finish_action("cancel_shutdown");
         relay(id, core_call(m, jnew(J_ARR)));
     } else if (in(IDLE_ONLY, m)) {
+        /* Busy means refuse, whoever owns the method: cleanup must never run alongside real work.
+           Only when idle does the C++ core get its turn, and Python after that. */
         if (eng_active(E)) reply(id, NULL, "請先完成或停止進行中的工作");
+        else if (swbd_cpp_has(m)) answer_cpp(id, m, a);
         else relay(id, core_call(m, json_clone(a)));
-    } else relay(id, core_call(m, json_clone(a)));
+    } else if (swbd_cpp_has(m)) answer_cpp(id, m, a);
+    else relay(id, core_call(m, json_clone(a)));
     json_free(req);
 }
 
@@ -219,7 +249,7 @@ int api_request(const char *text)
     jval *req = json_parse(text);
     if (!req) return 0;
     const char *m = jget_str(req, "m", "");
-    if (!in(NATIVE, m)) { json_free(req); return 0; }
+    if (!in(NATIVE, m) && !swbd_cpp_has(m)) { json_free(req); return 0; }   /* methods the C++ core took over pass here too */
     if (!thread_start(handle, req)) { json_free(req); return 0; }
     return 1;
 }
@@ -312,7 +342,7 @@ static void monitor(void *unused)
                         }
                     }
                 }
-                if (last && *last) json_free(core_call("reveal", arr1(jstr(last))));
+                if (last && *last) json_free(cpp_or_core("reveal", arr1(jstr(last))));
             }
             for (int source = 0; source < 2; source++) {
                 const jval *list = sources[source];
@@ -334,3 +364,68 @@ void api_init(const char *base, const char *data, const api_host *host)
 }
 
 void api_close(void) { if (E) eng_cancel_all(E); }
+
+/* 給 C++ 接手的方法用的忙碌查詢：只問 Python 那一側（語意等同 app.py 的 self._eng.busy()）。
+   C 引擎自己的忙碌由 api_request 的 IDLE_ONLY 守門負責，兩者合起來與原行為相同。 */
+static int cpp_python_busy(void)
+{
+    if (core_gone) return 0;
+    jval *reply = core_call("status", jnew(J_ARR));
+    if (!reply) return 0;
+    const jval *result = jget(reply, "r");
+    const int busy = result ? (int)jget_num(result, "busy", 0) : 0;
+    json_free(reply);
+    return busy;
+}
+
+void api_cpp_busy_probe(void) { swbd_cpp_set_busy_probe(cpp_python_busy); }
+
+/* 給 C++ 接手的方法用的系統事實：工作者政策與硬體編碼器都由引擎決定，避免兩份實作。 */
+static void cpp_system_facts(swbd_cpp_system_facts *out)
+{
+    if (!out) return;
+    eng_facts facts;
+    eng_facts_get(E, &facts);
+    out->ram_gb = facts.ram_gb;
+    out->cores = facts.cores;
+    out->heavy = facts.heavy;
+    out->light = facts.light;
+    out->slots = facts.slots;
+    out->hw_ready = facts.hw_ready;
+    out->hw_count = facts.hw_count;
+    out->hw = facts.hw;
+}
+
+void api_cpp_system_facts(void) { swbd_cpp_set_system_facts(cpp_system_facts); }
+
+/* C++ 接手的方法若需要問 Python（例如設定相關的選項），走這裡：把參數 JSON 送給 core_call，
+   再把回覆信封原樣寫進呼叫端的緩衝區。 */
+static int cpp_py_call(const char *method, const char *args_json, char *out, int out_size)
+{
+    if (core_gone || !method || !out || out_size <= 0) return -1;
+    jval *args = json_parse(args_json && *args_json ? args_json : "[]");
+    if (!args) return -1;
+    jval *reply = core_call(method, args);
+    if (!reply) return -1;
+    char *text = json_dump(reply);
+    json_free(reply);
+    if (!text) return -1;
+    const int length = (int)strlen(text);
+    if (length + 1 > out_size) { free(text); return -1; }
+    memcpy(out, text, (size_t)length + 1);
+    free(text);
+    return length;
+}
+
+/* 原生工具工作：交給 C 引擎排程，回傳工作 id 陣列（malloc 的 JSON，C++ 側負責釋放）。 */
+static char *cpp_tool_submit(const char *tool, const jval *files, const jval *opt, const char *label,
+                             int together, int heavy)
+{
+    jval *ids = eng_submit_tool(E, tool, files, opt, label, together, heavy);
+    char *text = json_dump(ids);
+    json_free(ids);
+    return text;
+}
+
+void api_cpp_py_call(void) { swbd_cpp_set_py_call(cpp_py_call); }
+void api_cpp_tool_submit(void) { swbd_cpp_set_tool_submit(cpp_tool_submit); }

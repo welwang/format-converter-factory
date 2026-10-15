@@ -1,6 +1,6 @@
-/* 四維八德 conversion engine in C: classification, queue, and the converters that drive external
+/* 四維八德 conversion engine in C++: classification, queue, and the converters that drive external
    programs (FFmpeg, 7-Zip, Pandoc, LibreOffice, Calibre).  Pictures, PDF, 3D models and the tool box
-   are handed to the Python component (see main.c). */
+   are handed to the Python component (see main.cpp). */
 #ifndef SWBD_ENGINE_H
 #define SWBD_ENGINE_H
 #include "json.h"
@@ -12,13 +12,16 @@ void engine_shutdown(engine *e);
 
 /* category of a path ("video", "audio", ... or NULL) and whether this engine converts it */
 const char *eng_category(const char *path);
-int eng_handles(const char *category, const char *target);
+int eng_handles(const char *category, const char *target, int merge, const jval *opt);
 
 /* API (results are JSON values owned by the caller) */
 jval *eng_describe(engine *e, const jval *paths);
 jval *eng_formats(engine *e);
 jval *eng_media_info(engine *e, const jval *paths);
 jval *eng_submit(engine *e, const jval *files, const char *target, const jval *opt, int merge);   /* array of job ids */
+/* 原生工具工作（工具箱由 C++ 接手的那幾個）：together＝所有檔案合成一個工作。 */
+jval *eng_submit_tool(engine *e, const char *tool, const jval *files, const jval *opt, const char *label,
+                      int together, int heavy);
 jval *eng_status(engine *e, int tail);
 int eng_active(engine *e);
 int eng_owns(engine *e, const char *id);
@@ -29,5 +32,17 @@ char *eng_retry(engine *e, const char *id);                     /* new id, mallo
 jval *eng_compare(engine *e, const char *id, char **error);
 jval *eng_hwinfo(engine *e);                                      /* null while detecting */
 jval *eng_preview(engine *e, const char *path, double at, char **error);
+
+/* 系統事實：由 C 引擎統一決定（工作者政策與硬體編碼器偵測都住在那裡），C++ 模組層透過
+   eng_facts_get 取得，避免同一個數字有兩份實作。hw 指向引擎內部的字串陣列，只在
+   hw_ready 為真時有效；呼叫端應立即複製自己要留下的部分。 */
+typedef struct {
+    double ram_gb;
+    int cores, heavy, light, slots;
+    int hw_ready, hw_count;
+    char *const *hw;
+} eng_facts;
+
+void eng_facts_get(engine *e, eng_facts *out);
 
 #endif

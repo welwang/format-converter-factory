@@ -1,6 +1,9 @@
-/* 四維八德 conversion engine (C port of engine.py's converters and queue). */
+﻿/* 四維八德 conversion engine (C port of engine.py's converters and queue). */
 #define _CRT_SECURE_NO_WARNINGS
 #include "engine.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +12,11 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include "swbd/pdfium.hpp"   /* 原生 PDF 渲染層（PDFium）；非 Windows 由 Python 端負責 */
+#include "swbd/qpdf.hpp"     /* 原生 PDF 重寫層（qpdf）：重新壓縮串流、產生物件串流 */
+#endif
 
 #ifdef _MSC_VER
 #define THREAD_LOCAL __declspec(thread)
@@ -83,11 +91,32 @@ const char *eng_category(const char *path)
 
 static const char *unsupported_why(const char *ext) { for (const unsup *u = UNSUPPORTED; u->ext; u++) if (!strcmp(u->ext, ext)) return u->why; return NULL; }
 
-/* what this C engine converts; the rest (pictures, PDF, 3D) goes to the Python component */
-int eng_handles(const char *cat, const char *target)
+/* what this C engine converts; the rest (pictures, PDF, 3D) goes to the Python component.
+   merge 與 opt 也一併納入判斷：同一個 (cat,target) 的不同預設可能需要不同的引擎。 */
+int eng_handles(const char *cat, const char *target, int merge, const jval *opt)
 {
-    (void)target;
     if (!cat) return 0;
+#ifdef _WIN32
+    /* PDF → PNG 由原生 PDFium 接手。逐像素等價（gate_pdf_native.ps1），而且實測比 Python 快：
+       24 頁 A4 @150 dpi，原生 12.4 ms/頁（渲染序列化、PNG 編碼 4 執行緒），
+       Python 引擎工作 14.6 ms/頁，輸出檔案還小約 15%。
+       PDF → JPG 仍留在 Python：JPEG 編碼器不同（Pillow 的 libjpeg-turbo vs stb），
+       接手會讓輸出不再是位元等價。 */
+    if (!strcmp(cat, "pdf")) {
+        if (target && !strcmp(target, "png")) return 1;
+        /* PDF → PDF（重新壓縮）由 qpdf 接手；多檔時先由 PDFium 組頁再接 qpdf。
+           實測在 gate_pdf_rewrite.ps1 的素材上：原始 1,934,374 bytes，pypdf 1,901,605（98%），
+           qpdf 68,450（4%）——頁數、逐頁文字、逐頁圖片像素全部相同。
+           唯一刻意留在 Python 的情況是 preset == 'small'：Python 會先把過大的圖片降採樣
+           （_shrink_pdf_images），qpdf／PDFium 都沒做，交出去會讓那一種預設的成品變大。 */
+        if (target && !strcmp(target, "pdf")) {
+            /* ostr() 定義在下面，這裡直接用 jget_str（語意相同：取不到就當 'balanced'）。 */
+            const char *preset = opt ? jget_str(opt, "preset", "balanced") : "balanced";
+            return preset && strcmp(preset, "small") != 0;
+        }
+        return 0;
+    }
+#endif
     return !strcmp(cat, "video") || !strcmp(cat, "audio") || !strcmp(cat, "archive") || !strcmp(cat, "subtitle") ||
            !strcmp(cat, "doc") || !strcmp(cat, "sheet") || !strcmp(cat, "ebook");
 }
@@ -100,11 +129,13 @@ typedef struct job {
     char id[16];
     char **files; int nfiles;
     char target[16], cat[16];
+    char tool[40], label[160];          /* 原生工具工作：工具 id 與顯示名稱（同 Python 的 Job.tool／label） */
     jval *opt;
     int merge, heavy, taken, busy;      /* busy: a worker still holds this job (never freed then) */
     volatile int state, cancelled;
     double progress, eta; int has_eta;
     char speed[64], msg[640], encoder[320], validation[320];
+    char note[320];        /* 給使用者的提醒（Python 的 j.notes；目前最多一則） */
     char *output;
     double created, started, elapsed, finished;
     long long in_size, out_size;
@@ -124,6 +155,7 @@ struct engine {
     char **reserved; int nreserved, capreserved;
     probe_t **probes; int nprobes, capprobes;
     char **hw; int nhw; int hw_state;         /* 0 unknown, 1 detecting, 2 done */
+    plat_mutex *pdf_lock;                     /* PDFium 不是執行緒安全的：同一時間只讓一個 PDF 工作渲染 */
     int stopping;
 };
 
@@ -262,7 +294,7 @@ static const probe_t *probe(engine *e, const char *path)
     const char *d = strstr(err, "Duration: ");
     int hh, mm; double ss;
     if (d && sscanf(d + 10, "%d:%d:%lf", &hh, &mm, &ss) == 3) r.dur = hh * 3600 + mm * 60 + ss;
-    r.streams = calloc(64, sizeof *r.streams);
+    r.streams = (char (*)[2][32])calloc(64, sizeof *r.streams);
     for (char *line = err; line && *line;) {
         char *nl = strchr(line, '\n');
         size_t len = nl ? (size_t)(nl - line) : strlen(line);
@@ -983,7 +1015,18 @@ static int check_file(engine *e, job *j, const char *path, const jval *opt, char
         for (size_t i = n > 2048 ? n - 2048 : 0; d && i + 5 <= n; i++) if (!memcmp(d + i, "%%EOF", 5)) eof = 1;
         free(d);
         if (!ok || !eof) { fail(j, "PDF 結構不完整"); return 0; }
-        snprintf(detail, dn, "PDF 結構可讀取");
+        /* 與 validation.check 相同：可讀取時報「PDF 可讀取 · N 頁」，加密文件報另一個字串。 */
+          std::string pdf_error;
+          int encrypted = 0;
+          mutex_lock(e->pdf_lock);
+          swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+          const int pdf_pages = pdfium.load(e->base)
+          ? swbd::pdf::open_document_info(pdfium, path, "", &encrypted, pdf_error)
+          : -1;
+          mutex_unlock(e->pdf_lock);
+        if (pdf_pages <= 0) { fail(j, pdf_error.empty() ? "PDF 沒有頁面" : pdf_error.c_str()); return 0; }
+        if (encrypted) snprintf(detail, dn, "加密 PDF 結構可讀取");
+        else snprintf(detail, dn, "PDF 可讀取 · %d 頁", pdf_pages);
     } else if (cat && !strcmp(cat, "archive") && e->sevenzip) {
         strv cmd = {0};
         sv_add(&cmd, e->sevenzip); sv_add(&cmd, "t"); sv_add(&cmd, "-bso0"); sv_add(&cmd, "-bsp0"); sv_add(&cmd, path);
@@ -1046,12 +1089,593 @@ static int check_space(job *j)
 }
 
 /* ================================================================== running a job */
+#ifdef _WIN32
+/* PDF → 每頁一張 PNG。輸出規則與 Python 版（engine.py _pdf_pages）完全相同：
+   資料夾是 out_dir\<檔名>（重複時加序號），檔名 001.png、002.png…，encoder 標示為 PDFium。
+   PDFium 不是執行緒安全的，所以整份文件渲染期間都持有 pdf_lock（等同 Python 的 PDFIUM_LOCK）。 */
+static void conv_pdf_pages(engine *e, job *j)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    mutex_lock(e->pdf_lock);
+    const int ready = pdfium.load(e->base);
+    mutex_unlock(e->pdf_lock);
+    if (!ready) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+
+    const char *preset = ostr(j->opt, "preset", "balanced");
+    const double dpi = !strcmp(preset, "high") ? 200 : !strcmp(preset, "small") ? 100 : 150;
+
+    char *stem_path = out_path(e, j, j->files[0], "x");     /* out_dir\檔名.x（已唯一化） */
+    size_t n = strlen(stem_path);
+    if (n > 2) stem_path[n - 2] = 0;                        /* 去掉 ".x"，資料夾名與 Python 相同 */
+    char *folder = unique_path(e, stem_path, j->files, j->nfiles);
+    free(stem_path);
+    if (!make_dirs(folder)) { fail(j, "無法建立輸出資料夾"); free(folder); return; }
+    j->output = folder;
+    snprintf(j->encoder, sizeof j->encoder, "PDFium");
+
+    /* PNG 編碼是純 CPU 工作，與下一頁的渲染重疊；數量與 engine.py 的 worker 政策一致（上限 4）。 */
+    int encoders = light_workers();
+    if (encoders > 4) encoders = 4;
+    if (encoders < 1) encoders = 1;
+    mutex_lock(e->pdf_lock);
+    swbd::pdf::RenderAll result = swbd::pdf::render_all_pages(
+        pdfium, j->files[0], dpi, folder, j->target,
+        [e, j](int done, int total) { (void)e; j->progress = total ? (double)done / (double)total : 1.0; return !j->cancelled; },
+        encoders);
+    mutex_unlock(e->pdf_lock);
+
+    if (result.cancelled) { j->cancelled = 1; return; }
+    if (!result.ok) { fail(j, result.error.empty() ? "PDF 渲染失敗" : result.error.c_str()); return; }
+    j->progress = 1;
+}
+
+/* PDF → PDF（重新寫出、重新壓縮）。與 Python 版（engine.py 的 pypdf 分支）對齊的可觀察行為：
+   輸出檔名由 out_path 決定、encoder 標示引擎、以及「重寫後沒有比較小就複製原檔」的退路。
+   qpdf 內部全程走記憶體，所以非 ASCII 路徑（例如 E:\四維八德）不會有問題。 */
+static void conv_pdf_rewrite(engine *e, job *j)
+{
+    swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
+    if (!qpdf.load(e->base)) { fail(j, "找不到原生 PDF 重寫引擎（_internal\\qpdf*.dll）"); return; }
+    if (j->cancelled) return;
+
+    char *out = out_path(e, j, j->files[0], "pdf");
+    j->output = out;
+    j->progress = 0.3;
+
+    /* 多檔＝合併：PDFium 先在記憶體把頁面依序接起來，再交給 qpdf 重壓
+       （engine.py 的 merge 路徑就是 append 之後逐頁重壓，所以兩邊做的事相同）。 */
+    std::vector<unsigned char> merged;
+    if (j->nfiles > 1) {
+        swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+        if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+        std::vector<std::string> inputs;
+        inputs.reserve(static_cast<size_t>(j->nfiles));
+        for (int i = 0; i < j->nfiles; i++) inputs.push_back(j->files[i]);
+        mutex_lock(e->pdf_lock);          /* PDFium 不是執行緒安全的 */
+        swbd::pdf::MergeResult merged_result = swbd::pdf::merge_documents(
+            pdfium, inputs, merged,
+            [j](int done, int total) {
+                j->progress = total ? 0.3 + 0.6 * (double)done / (double)total : 0.3;
+                return !j->cancelled;
+            });
+        mutex_unlock(e->pdf_lock);
+        if (merged_result.cancelled) { j->cancelled = 1; return; }
+        if (!merged_result.ok) {
+            fail(j, merged_result.error.empty() ? "PDF 合併失敗" : merged_result.error.c_str());
+            return;
+        }
+        snprintf(j->encoder, sizeof j->encoder, "PDFium+qpdf");
+    } else {
+        snprintf(j->encoder, sizeof j->encoder, "qpdf");
+    }
+    if (j->cancelled) return;
+
+    std::string error;
+    bool written = false;
+    if (j->nfiles > 1) {
+        std::vector<unsigned char> rewritten;
+        if (qpdf.rewrite_memory(merged, rewritten, error) && !rewritten.empty()) {
+            written = write_file(out, reinterpret_cast<const char *>(rewritten.data()), rewritten.size()) != 0;
+            if (!written) error = "無法寫出重寫後的 PDF";
+        }
+    } else {
+        written = qpdf.rewrite_file(j->files[0], out, error);
+    }
+    if (!written) {
+        fail(j, error.empty() ? "PDF 重寫失敗" : error.c_str());
+        return;
+    }
+    if (j->cancelled) return;
+    j->progress = 0.9;
+
+    /* Python 的退路：`if not j.merge and getsize(out) >= getsize(files[0])` 就複製原檔。 */
+    const int64_t before = file_size(j->files[0]);
+    const int64_t after = file_size(out);
+    if (j->nfiles == 1 && before > 0 && after >= before) {
+        if (!copy_file(j->files[0], out)) { fail(j, "無法複製原檔"); return; }
+        snprintf(j->encoder, sizeof j->encoder, "qpdf（原檔已是最小，直接複製）");
+    }
+    j->progress = 1;
+}
+#endif
+
+/* 工具工作的輸出路徑：與 pdf_tools.output() 相同 —— <來源檔名>_<工具名稱>.pdf，
+   工具名稱裡的 ASCII '/' 換成 '_'（Python 是同一個規則），重複時由 unique_path 加序號。 */
+/* Python 的 folder(j)：<來源檔名>_<工具名稱>（unique 後去掉結尾的 .files），並建立資料夾。 */
+static char *tool_out_folder(engine *e, job *j, const char *src)
+{
+    const char *od = ostr(j->opt, "out_dir", "");
+    char *dir = od[0] ? str_dup(od) : path_dir(src);
+    make_dirs(dir);
+    char *stem = stem_of(src);
+    char name[320];
+    size_t at = 0;
+    for (const char *c = stem; *c && at + 1 < sizeof name; c++) name[at++] = *c;
+    name[at++] = '_';
+    for (const char *c = j->label; *c && at + 1 < sizeof name; c++) name[at++] = (*c == '/') ? '_' : *c;
+    name[at] = 0;
+    char *full = str_fmt("%s\\%s.files", dir, name);
+    char *u = unique_path(e, full, j->files, j->nfiles);
+    const size_t len = strlen(u);
+    if (len > 6) u[len - 6] = 0;          /* 去掉 ".files" */
+    make_dirs(u);
+    free(dir); free(stem); free(full);
+    return u;
+}
+
+static char *tool_out_path(engine *e, job *j, const char *src, const char *ext)
+{
+    const char *od = ostr(j->opt, "out_dir", "");
+    char *folder = od[0] ? str_dup(od) : path_dir(src);
+    make_dirs(folder);
+    char *stem = stem_of(src);
+    char name[320];
+    size_t at = 0;
+    for (const char *c = stem; *c && at + 1 < sizeof name; c++) name[at++] = *c;
+    name[at++] = '_';
+    for (const char *c = j->label; *c && at + 1 < sizeof name; c++) name[at++] = (*c == '/') ? '_' : *c;
+    name[at] = 0;
+    char *full = str_fmt("%s\\%s.%s", folder, name, ext);
+    char *u = unique_path(e, full, j->files, j->nfiles);
+    free(folder); free(stem); free(full);
+    return u;
+}
+
+/* 報告用的 JSON 字串轉義（報告只有檔名與方法字串，但仍要正確轉義）。 */
+static std::string json_quote(const char *text)
+{
+    std::string out = "\"";
+    for (const unsigned char *c = (const unsigned char *)text; c && *c; c++) {
+        if (*c == '"' || *c == '\\') { out += '\\'; out += (char)*c; }
+        else if (*c < 0x20) { char buf[8]; snprintf(buf, sizeof buf, "\\u%04x", *c); out += buf; }
+        else out += (char)*c;
+    }
+    out += "\"";
+    return out;
+}
+
+/* p_repair：先走 qpdf 的結構復原（Python 第一條路徑就是 pikepdf attempt_recovery=True），
+   失敗才用 PDFium 逐頁重建（Python 的第二條路徑是 MuPDF 逐頁復原，引擎不同但語意相同：
+   只保留讀得出來的頁面，其餘記到報告的 unreadable）。
+   輸出是資料夾：修復後.pdf ＋ 修復報告.json（與 Python 相同）。 */
+static void tool_pdf_repair(engine *e, job *j)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
+    if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+    if (!qpdf.load(e->base)) { fail(j, "找不到原生 PDF 重寫引擎（_internal\\qpdf*.dll）"); return; }
+    const char *password = ostr(j->opt, "pw", "");
+    char *root = tool_out_folder(e, j, j->files[0]);
+    j->output = root;
+    j->keep_output = 1;
+    char *dest = str_fmt("%s\\修復後.pdf", root);
+
+    std::vector<int> unreadable;
+    int recovered = 0;
+    const char *method = "qpdf 結構重建";
+    std::string error;
+    j->progress = 0.1;
+    if (qpdf.rewrite_file(j->files[0], dest, error, true)) {
+        /* 逐頁驗證：真的畫一次（0.2 倍）才算這一頁讀得出來。 */
+        mutex_lock(e->pdf_lock);
+        const int pages = swbd::pdf::open_page_count(pdfium, dest, password, error);
+        if (pages > 0) {
+            swbd::pdf::FPDF_DOCUMENT doc = pdfium.LoadDocument(dest, password[0] ? password : nullptr);
+            if (doc) {
+                for (int i = 0; i < pages; i++) {
+                    if (j->cancelled) break;
+                    swbd::pdf::FPDF_PAGE page = pdfium.LoadPage(doc, i);
+                    int ok_page = 0;
+                    if (page) {
+                        const int bw = (int)std::ceil(pdfium.GetPageWidthF(page) * 0.2);
+                        const int bh = (int)std::ceil(pdfium.GetPageHeightF(page) * 0.2);
+                        swbd::pdf::FPDF_BITMAP bitmap = (bw > 0 && bh > 0) ? pdfium.Bitmap_Create(bw, bh, 1) : nullptr;
+                        if (bitmap) {
+                            pdfium.Bitmap_FillRect(bitmap, 0, 0, bw, bh, 0xFFFFFFFFu /* 白底 */);
+                            pdfium.RenderPageBitmap(bitmap, page, 0, 0, bw, bh, 0, 0x01 | 0x10 /* FPDF_ANNOT | FPDF_REVERSE_BYTE_ORDER（PDFium 公開常數） */);
+                            ok_page = pdfium.Bitmap_GetBuffer(bitmap) != nullptr;
+                            pdfium.Bitmap_Destroy(bitmap);
+                        }
+                        pdfium.ClosePage(page);
+                    }
+                    if (ok_page) recovered++;
+                    else unreadable.push_back(i + 1);
+                    j->progress = 0.1 + 0.8 * (double)(i + 1) / (double)pages;
+                }
+                pdfium.CloseDocument(doc);
+            }
+        }
+        mutex_unlock(e->pdf_lock);
+    }
+    if (recovered <= 0) {
+        /* 第二條路徑：PDFium 逐頁重建。 */
+        unreadable.clear();
+        std::vector<unsigned char> rebuilt;
+        mutex_lock(e->pdf_lock);
+        const int got = swbd::pdf::rebuild_readable_pages(
+            pdfium, j->files[0], password, rebuilt, unreadable,
+            [j](int done, int total) {
+                j->progress = total ? 0.85 * (double)done / (double)total : 0;
+                return !j->cancelled;
+            });
+        mutex_unlock(e->pdf_lock);
+        if (j->cancelled) return;
+        if (got <= 0) { fail(j, "無法恢復可讀取的頁面；原檔保持不變"); return; }
+        if (!write_file(dest, (const char *)rebuilt.data(), rebuilt.size())) { fail(j, "無法寫出修復後的 PDF"); return; }
+        recovered = got;
+        method = "MuPDF 逐頁復原";   /* 與 Python 相同的敘述（引擎實作是 PDFium） */
+    }
+    if (!unreadable.empty()) {
+        char note[160];
+        snprintf(note, sizeof note, "%d 頁無法恢復，請查看報告", (int)unreadable.size());
+        snprintf(j->note, sizeof j->note, "%s", note);
+    }
+
+    /* 修復報告.json（欄位與 Python 的 report 相同）。 */
+    char *stem = stem_of(j->files[0]);
+    std::string report = "{\n  \"source\": " + json_quote(str_fmt("%s", stem)) +
+                         ",\n  \"recovered\": " + std::to_string(recovered) + ",\n  \"unreadable\": [";
+    for (size_t k = 0; k < unreadable.size(); k++) {
+        report += (k ? ", " : "") + std::to_string(unreadable[k]);
+    }
+    char *full_stem = stem_of(j->files[0]);
+    report += "],\n  \"method\": " + json_quote(method) +
+              ",\n  \"note\": " + json_quote("可恢復的內容取決於原檔損壞程度，修復後請檢查頁數與畫面。") + "\n}";
+    char *report_path = str_fmt("%s\\修復報告.json", root);
+    if (!write_file(report_path, report.data(), report.size())) {
+        free(report_path); free(full_stem); free(stem); free(dest);
+        fail(j, "無法寫出修復報告");
+        return;
+    }
+    free(report_path); free(full_stem); free(stem); free(dest);
+    snprintf(j->encoder, sizeof j->encoder, "%s", method);
+    j->progress = 1;
+}
+
+/* p_pdf_images（mode=pages、fmt=png）：逐頁渲染到資料夾，檔名與 Python 相同（第0001頁.png）。
+   dpi 會依頁面尺寸夾在 4000 像素以內（與 pdf_tools.pdf_images 相同），最低 72。 */
+static void tool_pdf_images(engine *e, job *j)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+    const char *password = ostr(j->opt, "pw", "");
+    std::string error;
+    mutex_lock(e->pdf_lock);
+    const int count = swbd::pdf::open_page_count(pdfium, j->files[0], password, error);
+    mutex_unlock(e->pdf_lock);
+    if (count <= 0) { fail(j, error.c_str()); return; }
+
+    std::vector<int> selected;
+    if (!swbd::pdf::parse_page_spec(ostr(j->opt, "pages", ""), count, 0, selected, error)) {
+        fail(j, error.c_str());
+        return;
+    }
+    const double want = jget_num(j->opt, "dpi", 150);
+    char *folder = tool_out_folder(e, j, j->files[0]);
+    j->output = folder;                   /* 輸出是資料夾，取消時也要保留（Python 的 keep_output） */
+    j->keep_output = 1;
+
+    swbd::pdf::RenderAll made;
+    mutex_lock(e->pdf_lock);
+    made = swbd::pdf::render_pages(
+        pdfium, j->files[0], password, selected, want,
+        [want](int, double w, double h) {
+            const double longest = w > h ? w : h;
+            const double cap = longest > 0 ? 4000.0 / longest * 72.0 : want;
+            const double dpi = want < cap ? want : cap;
+            return dpi < 72.0 ? 72.0 : dpi;
+        },
+        [](int index) {
+            char leaf[32];
+            std::snprintf(leaf, sizeof leaf, "第%04d頁.png", index + 1);
+            return std::string(leaf);
+        },
+        folder, "png",
+        [j](int done, int total) {
+            j->progress = total ? 0.95 * (double)done / (double)total : 0;
+            return !j->cancelled;
+        },
+        4);
+    mutex_unlock(e->pdf_lock);
+    if (made.cancelled) { j->cancelled = 1; return; }
+    if (!made.ok) { fail(j, made.error.empty() ? "PDF 渲染失敗" : made.error.c_str()); return; }
+    if (made.rendered <= 0) { fail(j, "文件沒有可提取的圖片"); return; }
+    snprintf(j->encoder, sizeof j->encoder, "本機頁面渲染");
+    j->progress = 1;
+}
+
+/* p_flatten：把註記與表單欄位壓進頁面內容（Python 是 PyMuPDF 的 bake(annots,widgets)）。
+   與 Python 相同：只做壓平後寫出，不再另外重寫。 */
+static void tool_pdf_flatten(engine *e, job *j)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+    const char *password = ostr(j->opt, "pw", "");
+    j->progress = 0.2;
+    std::vector<unsigned char> bytes;
+    mutex_lock(e->pdf_lock);
+    swbd::pdf::MergeResult made = swbd::pdf::flatten_document(pdfium, j->files[0], password, bytes);
+    mutex_unlock(e->pdf_lock);
+    if (!made.ok) { fail(j, made.error.empty() ? "PDF 壓平失敗" : made.error.c_str()); return; }
+    if (j->cancelled) return;
+    j->progress = 0.8;
+    char *out = tool_out_path(e, j, j->files[0], "pdf");
+    if (!write_file(out, (const char *)bytes.data(), bytes.size())) {
+        free(out);
+        fail(j, "無法寫出 PDF");
+        return;
+    }
+    j->output = out;
+    std::string error;
+    mutex_lock(e->pdf_lock);
+    const int written = swbd::pdf::open_page_count(pdfium, out, "", error);
+    mutex_unlock(e->pdf_lock);
+    if (written != made.pages) {
+        fail(j, written <= 0 ? "輸出 PDF 沒有頁面" : "輸出 PDF 的頁數不正確");
+        return;
+    }
+    snprintf(j->encoder, sizeof j->encoder, "本機 PDF 引擎");
+    j->progress = 1;
+}
+
+/* p_compress（level=lossless）：單純重新寫出（重新壓縮串流＋物件串流＋丟棄未引用物件）。
+   與 Python 相同：如果寫出來沒有比原檔小，就保留原始位元內容並記一則提醒
+   （validation 由 validate() 決定，Python 也是這樣被覆寫的）。 */
+static void tool_pdf_compress(engine *e, job *j)
+{
+    swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
+    if (!qpdf.load(e->base)) { fail(j, "找不到原生 PDF 重寫引擎（_internal\\qpdf*.dll）"); return; }
+    char *out = tool_out_path(e, j, j->files[0], "pdf");
+    j->progress = 0.3;
+    std::string error;
+    if (!qpdf.rewrite_file(j->files[0], out, error)) {
+        free(out);
+        fail(j, error.empty() ? "PDF 重寫失敗" : error.c_str());
+        return;
+    }
+    j->output = out;
+    j->progress = 0.8;
+    const int64_t before = file_size(j->files[0]);
+    const int64_t after = file_size(out);
+    if (before > 0 && after >= before) {
+        if (!copy_file(j->files[0], out)) { fail(j, "無法保留原始檔案"); return; }
+        snprintf(j->note, sizeof j->note, "原始檔已較精簡，沒有強制降低品質以追求檔案大小");
+    }
+    snprintf(j->encoder, sizeof j->encoder, "本機 PDF 引擎");
+    j->progress = 1;
+}
+
+/* p_copy：建立完整副本（pdf_tools 的 p_copy 分支），輸出必須與來源逐位元相同。
+   Python 用 shutil.copyfile 之後再比對 sha256；這裡以串流逐段比對（等價且更直接）。 */
+/* UTF-8 路徑轉寬字元：Win32 的檔案 API 需要寬字元，非 ASCII 路徑用窄字元會失敗。 */
+static std::wstring wide_of(const char *utf8)
+{
+    if (!utf8 || !*utf8) return std::wstring();
+    const int need = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+    std::wstring out((size_t)(need ? need : 1), L'\0');
+    if (need) MultiByteToWideChar(CP_UTF8, 0, utf8, -1, out.data(), need);
+    out.resize(need ? (size_t)(need - 1) : 0);
+    return out;
+}
+
+static int same_file_bytes(const char *a, const char *b)
+{
+    if (file_size(a) != file_size(b) || file_size(a) < 0) return 0;
+    HANDLE ha = CreateFileW(wide_of(a).c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hb = CreateFileW(wide_of(b).c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (ha == INVALID_HANDLE_VALUE || hb == INVALID_HANDLE_VALUE) {
+        if (ha != INVALID_HANDLE_VALUE) CloseHandle(ha);
+        if (hb != INVALID_HANDLE_VALUE) CloseHandle(hb);
+        return 0;
+    }
+    /* 一定要是區域（堆積）變數：這個函式由工具工作執行緒呼叫，多個 p_copy 同時跑時
+       static 緩衝會互相覆蓋，導致驗證誤判。 */
+    std::vector<unsigned char> buf_a(65536), buf_b(65536);
+    int same = 1;
+    for (;;) {
+        DWORD na = 0, nb = 0;
+        const BOOL oka = ReadFile(ha, buf_a.data(), (DWORD)buf_a.size(), &na, NULL);
+        const BOOL okb = ReadFile(hb, buf_b.data(), (DWORD)buf_b.size(), &nb, NULL);
+        if (!oka || !okb || na != nb || (na && memcmp(buf_a.data(), buf_b.data(), na))) { same = 0; break; }
+        if (!na) break;
+    }
+    CloseHandle(ha);
+    CloseHandle(hb);
+    return same;
+}
+
+static void tool_pdf_copy(engine *e, job *j)
+{
+    char *out = tool_out_path(e, j, j->files[0], "pdf");
+    j->progress = 0.3;
+    if (!copy_file(j->files[0], out)) { free(out); fail(j, "無法建立副本"); return; }
+    j->output = out;
+    j->progress = 0.8;
+    if (!same_file_bytes(j->files[0], out)) { fail(j, "複製驗證失敗"); return; }
+    snprintf(j->encoder, sizeof j->encoder, "完整副本");
+    j->progress = 1;
+}
+/* p_merge：按清單順序合併（pdf_tools.arrange 的合併分支），輸出檔名沿用 tool_out_path 的規則。
+   Python 對每個來源都用同一組選項（含 pw），所以密碼也一併傳進 PDFium。 */
+static void tool_pdf_merge(engine *e, job *j)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
+    if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+    if (!qpdf.load(e->base)) { fail(j, "找不到原生 PDF 重寫引擎（_internal\\qpdf*.dll）"); return; }
+
+    std::vector<std::string> inputs;
+    inputs.reserve((size_t)j->nfiles);
+    for (int i = 0; i < j->nfiles; i++) inputs.push_back(j->files[i]);
+    const char *password = ostr(j->opt, "pw", "");
+    j->progress = 0.05;
+
+    std::vector<unsigned char> bytes;
+    mutex_lock(e->pdf_lock);
+    swbd::pdf::MergeResult made = swbd::pdf::merge_documents(
+        pdfium, inputs, password, bytes,
+        [j](int done, int total) {
+            j->progress = total ? 0.85 * (double)done / (double)total : 0.05;
+            return !j->cancelled;
+        });
+    mutex_unlock(e->pdf_lock);
+    if (made.cancelled) { j->cancelled = 1; return; }
+    if (!made.ok) { fail(j, made.error.empty() ? "PDF 合併失敗" : made.error.c_str()); return; }
+    if (j->cancelled) return;
+
+    std::string error;
+    std::vector<unsigned char> rewritten;
+    if (!qpdf.rewrite_memory(bytes, rewritten, error)) {
+        fail(j, error.empty() ? "PDF 重寫失敗" : error.c_str());
+        return;
+    }
+    char *out = tool_out_path(e, j, j->files[0], "pdf");
+    if (!write_file(out, (const char *)rewritten.data(), rewritten.size())) {
+        free(out);
+        fail(j, "無法寫出 PDF");
+        return;
+    }
+    j->output = out;
+    mutex_lock(e->pdf_lock);
+    const int written = swbd::pdf::open_page_count(pdfium, out, "", error);
+    mutex_unlock(e->pdf_lock);
+    if (written != made.pages) {
+        fail(j, written <= 0 ? "輸出 PDF 沒有頁面" : "輸出 PDF 的頁數不正確");
+        return;
+    }
+    snprintf(j->encoder, sizeof j->encoder, "本機 PDF 引擎");
+    j->progress = 1;
+}
+
+/* 三個「整理」工具的共用尾巴：組頁 → qpdf 重寫 → 寫檔 → 與 Python save() 相同的自我檢查。 */
+static void tool_pdf_finish(engine *e, job *j, const std::vector<int> &keep, const char *password, int blanks)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
+    std::vector<unsigned char> bytes;
+    mutex_lock(e->pdf_lock);
+    swbd::pdf::MergeResult made = blanks
+        ? swbd::pdf::assemble_with_blanks(pdfium, j->files[0], password, keep, bytes)
+        : swbd::pdf::select_pages(pdfium, j->files[0], password, keep, bytes);
+    mutex_unlock(e->pdf_lock);
+    if (!made.ok) { fail(j, made.error.empty() ? "PDF 頁面操作失敗" : made.error.c_str()); return; }
+    if (j->cancelled) return;
+    j->progress = 0.7;
+
+    std::string error;
+    std::vector<unsigned char> rewritten;
+    if (!qpdf.rewrite_memory(bytes, rewritten, error)) {
+        fail(j, error.empty() ? "PDF 重寫失敗" : error.c_str());
+        return;
+    }
+    char *out = tool_out_path(e, j, j->files[0], "pdf");
+    if (!write_file(out, (const char *)rewritten.data(), rewritten.size())) {
+        free(out);
+        fail(j, "無法寫出 PDF");
+        return;
+    }
+    j->output = out;
+
+    /* 與 Python save() 相同的自我檢查：輸出必須開得起來、而且頁數正確。 */
+    mutex_lock(e->pdf_lock);
+    const int written = swbd::pdf::open_page_count(pdfium, out, "", error);
+    mutex_unlock(e->pdf_lock);
+    if (written != made.pages) {
+        fail(j, written <= 0 ? "輸出 PDF 沒有頁面" : "輸出 PDF 的頁數不正確");
+        return;
+    }
+    snprintf(j->encoder, sizeof j->encoder, "本機 PDF 引擎");   /* validation 由 validate() 產生，與 Python 相同 */
+    j->progress = 1;
+}
+
+/* pdf_tools.arrange 的三個非合併工具：p_remove（刪除頁面）／p_extract（依序提取）／
+   p_organize（order／reverse／blank）。三者共用 indexes 解析與組頁尾巴。 */
+static void tool_pdf_arrange(engine *e, job *j)
+{
+    swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
+    swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
+    if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
+    if (!qpdf.load(e->base)) { fail(j, "找不到原生 PDF 重寫引擎（_internal\\qpdf*.dll）"); return; }
+
+    const char *password = ostr(j->opt, "pw", "");
+    std::string error;
+    mutex_lock(e->pdf_lock);
+    const int count = swbd::pdf::open_page_count(pdfium, j->files[0], password, error);
+    mutex_unlock(e->pdf_lock);
+    if (count <= 0) { fail(j, error.c_str()); return; }
+    j->progress = 0.2;
+
+    /* Python 的 arrange 對這三個工具都用 allow_repeat=True（p_extract 可以重複取同一頁）。 */
+    std::vector<int> selected;
+    if (!swbd::pdf::parse_page_spec(ostr(j->opt, "pages", ""), count, 1, selected, error)) {
+        fail(j, error.c_str());
+        return;
+    }
+
+    if (!strcmp(j->tool, "p_remove")) {
+        std::vector<char> drop((size_t)count, 0);
+        for (int index : selected) drop[(size_t)index] = 1;
+        std::vector<int> keep;
+        for (int i = 0; i < count; i++) if (!drop[(size_t)i]) keep.push_back(i);
+        if (keep.empty()) { fail(j, "不能移除文件的所有頁面"); return; }
+        j->progress = 0.35;
+        tool_pdf_finish(e, j, keep, password, 0);
+        return;
+    }
+    if (!strcmp(j->tool, "p_extract")) { tool_pdf_finish(e, j, selected, password, 0); return; }
+
+    /* p_organize */
+    const char *mode = ostr(j->opt, "mode", "order");
+    if (!strcmp(mode, "reverse")) {
+        std::vector<int> reversed;
+        for (int i = count - 1; i >= 0; i--) reversed.push_back(i);
+        tool_pdf_finish(e, j, reversed, password, 0);
+        return;
+    }
+    if (!strcmp(mode, "blank")) { tool_pdf_finish(e, j, selected, password, 1); return; }
+    tool_pdf_finish(e, j, selected, password, 0);
+}
+
+/* 工具工作的分派：只會收到 C++ 側宣告接手的那幾個工具。 */
+static void run_tool_job(engine *e, job *j)
+{
+    if (!strcmp(j->tool, "p_repair")) { tool_pdf_repair(e, j); return; }
+    if (!strcmp(j->tool, "p_pdf_images")) { tool_pdf_images(e, j); return; }
+    if (!strcmp(j->tool, "p_flatten")) { tool_pdf_flatten(e, j); return; }
+    if (!strcmp(j->tool, "p_compress")) { tool_pdf_compress(e, j); return; }
+    if (!strcmp(j->tool, "p_copy")) { tool_pdf_copy(e, j); return; }
+    if (!strcmp(j->tool, "p_merge")) { tool_pdf_merge(e, j); return; }
+    if (!strcmp(j->tool, "p_remove") || !strcmp(j->tool, "p_extract") || !strcmp(j->tool, "p_organize")) { tool_pdf_arrange(e, j); return; }
+    fail(j, "這個工具還沒有原生實作");
+}
+
 static void run_job(engine *e, job *j)
 {
     j->state = Q_RUNNING; j->started = now_s(); j->msg[0] = 0;
     char ext[32]; ext_of(j->files[0], ext, sizeof ext);
     const char *why = unsupported_why(ext);
-    if (!check_space(j)) {}
+    if (j->tool[0]) run_tool_job(e, j);          /* 原生工具工作（工具箱由 C++ 接手的那幾個） */
+    else if (!check_space(j)) {}
     else if (why && (!strcmp(ext, "kfx") || !strcmp(ext, "key") || !strcmp(ext, "numbers"))) fail(j, why);
     else if (!strcmp(j->cat, "video") && !strcmp(j->target, "srt")) conv_subtitle(e, j);
     else if (!strcmp(j->cat, "video") || !strcmp(j->cat, "audio")) conv_ffmpeg(e, j);
@@ -1059,6 +1683,10 @@ static void run_job(engine *e, job *j)
     else if (!strcmp(j->cat, "archive")) conv_archive(e, j);
     else if (!strcmp(j->cat, "doc") || !strcmp(j->cat, "sheet")) conv_doc(e, j);
     else if (!strcmp(j->cat, "ebook")) conv_ebook(e, j);
+#ifdef _WIN32
+    else if (!strcmp(j->cat, "pdf") && !strcmp(j->target, "png")) conv_pdf_pages(e, j);
+    else if (!strcmp(j->cat, "pdf") && !strcmp(j->target, "pdf")) conv_pdf_rewrite(e, j);
+#endif
     else fail(j, "無法辨識來源檔案類型");
 
     if (j->cancelled) {
@@ -1125,7 +1753,7 @@ engine *engine_new(const char *base, const char *data)
     e->pandoc = tool_path(base, "pandoc.exe");
     e->soffice = tool_path(base, "libreoffice/program/soffice.exe");
     e->calibre = tool_path(base, "calibre/ebook-convert.exe");
-    e->m = mutex_new(); e->qc = cond_new();
+    e->m = mutex_new(); e->qc = cond_new(); e->pdf_lock = mutex_new();
     e->slots = work_slots(); e->quiet_slots = 1; e->office_slots = mem_gb() <= 8.5 ? 1 : 2;
     e->heavy_workers = auto_workers(); e->light_workers = light_workers();
     for (int i = 0; i < e->heavy_workers + e->light_workers; i++) {
@@ -1184,6 +1812,30 @@ jval *eng_submit(engine *e, const jval *files, const char *target, const jval *o
     return ids;
 }
 
+/* 原生工具工作：由 C++ 模組層的 run_tool 送進來。tool 是工具 id，label 是顯示名稱
+   （Python 的 submit_tool 也把工具名稱當 label），together＝所有檔案合成一個工作。 */
+jval *eng_submit_tool(engine *e, const char *tool, const jval *files, const jval *opt, const char *label,
+                      int together, int heavy)
+{
+    jval *ids = jnew(J_ARR);
+    const int n = files && files->type == J_ARR ? (int)files->len : 0;
+    char **list = (char **)calloc((size_t)(n ? n : 1), sizeof(char *));
+    int k = 0;
+    for (int i = 0; i < n; i++) if (files->items[i]->type == J_STR) list[k++] = files->items[i]->str;
+    int count = (k && together) ? 1 : k;
+    for (int i = 0; i < count; i++) {
+        job *j = new_job(e, list + (together ? 0 : i), together ? k : 1, tool, opt, together ? 1 : 0);
+        snprintf(j->tool, sizeof j->tool, "%s", tool);
+        snprintf(j->label, sizeof j->label, "%s", label ? label : "");
+        snprintf(j->cat, sizeof j->cat, "tool");      /* Python 的 Job.cat 對工具工作就是 'tool' */
+        j->heavy = heavy;
+        jarr_push(ids, jstr(j->id));
+        enqueue(e, j);
+    }
+    free(list);
+    return ids;
+}
+
 static jval *job_info(const job *j)
 {
     jval *o = jnew(J_OBJ);
@@ -1192,7 +1844,7 @@ static jval *job_info(const job *j)
     snprintf(name, sizeof name, "%s", *b ? b : j->files[0]);
     if (j->merge && j->nfiles > 1) { size_t l = strlen(name); snprintf(name + l, sizeof name - l, " 等 %d 個", j->nfiles); }
     jobj_set(o, "id", jstr(j->id)); jobj_set(o, "name", jstr(name)); jobj_set(o, "target", jstr(j->target));
-    jobj_set(o, "label", jstr("")); jobj_set(o, "kind", jstr("")); jobj_set(o, "state", jstr(STATE_NAME[j->state]));
+    jobj_set(o, "label", jstr(j->label)); jobj_set(o, "kind", jstr(j->tool)); jobj_set(o, "state", jstr(STATE_NAME[j->state]));
     jobj_set(o, "progress", jnum(floor((j->progress > 1 ? 1 : j->progress) * 1000 + 0.5) / 1000));
     jobj_set(o, "speed", jstr(j->speed));
     jobj_set(o, "eta", j->has_eta ? jnum(j->eta) : jnew(J_NULL));
@@ -1201,7 +1853,10 @@ static jval *job_info(const job *j)
     jobj_set(o, "elapsed", jnum(floor(j->elapsed * 100 + 0.5) / 100));
     jobj_set(o, "in_size", jnum((double)j->in_size)); jobj_set(o, "out_size", jnum((double)j->out_size));
     jobj_set(o, "finished", jnum(j->finished)); jobj_set(o, "retry", jbool(1));
-    jobj_set(o, "validation", jstr(j->validation)); jobj_set(o, "notes", jnew(J_ARR));
+    jobj_set(o, "validation", jstr(j->validation));
+    jval *notes = jnew(J_ARR);
+    if (j->note[0]) jarr_push(notes, jstr(j->note));
+    jobj_set(o, "notes", notes);
     jobj_set(o, "created", jnum(j->created));
     return o;
 }
@@ -1455,6 +2110,22 @@ jval *eng_media_info(engine *e, const jval *paths)
     }
     json_free(list);
     return res;
+}
+
+/* 供 C++ 模組層查詢的系統事實：數字一律沿用引擎自己的政策函式，硬體編碼器沿用偵測結果。 */
+void eng_facts_get(engine *e, eng_facts *out)
+{
+    if (!out) return;
+    out->ram_gb = mem_gb();
+    out->cores = cpu_count();
+    out->heavy = auto_workers();
+    out->light = light_workers();
+    out->slots = work_slots();
+    mutex_lock(e->m);
+    out->hw_ready = e->hw_state == 2;
+    out->hw_count = e->nhw;
+    out->hw = e->hw;
+    mutex_unlock(e->m);
 }
 
 jval *eng_hwinfo(engine *e)

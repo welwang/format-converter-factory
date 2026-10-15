@@ -585,6 +585,8 @@ class Engine:
             ext = classify(j.files[0])[1]
             if j.tool == 'hardware_test':
                 import system_tools; system_tools.run_tests(self, j)
+            elif j.tool == 'health_check':
+                import health_check; health_check.run(self, j)
             elif j.tool == 'workflow':
                 import workflows; workflows.run(self, j)
             elif j.cat == 'tool':
@@ -610,7 +612,7 @@ class Engine:
                 self._model(j)
             else: raise RuntimeError('無法辨識來源檔案類型')
             if j.cancelled: raise InterruptedError
-            if j.tool not in ('workflow', 'hardware_test'): self.validate(j)   # the hardware test writes its own result summary
+            if j.tool not in ('workflow', 'hardware_test', 'health_check'): self.validate(j)   # the hardware checks write their own result summary
             j.state = 'partial' if j.warnings else 'done'; j.progress = 1.0; j.msg = '部分完成：' + '；'.join(j.warnings)[:240] if j.warnings else '完成'; j.eta = 0
         except InterruptedError:
             j.state = 'cancelled'; j.msg = '已取消'
@@ -655,7 +657,7 @@ class Engine:
         if not old or old.state not in ('error', 'cancelled', 'done', 'partial'): return None
         j = Job(old.files, old.target, old.opt, old.merge, tool=old.tool, label=old.label)
         if old.tool == 'dl': return 'dl'
-        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in ('workflow', 'hardware_test') or j.tool in __import__('tools').HEAVY)
+        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in ('workflow', 'hardware_test', 'health_check') or j.tool in __import__('tools').HEAVY)
         with self.lock:
             self.jobs[j.id] = j; self.order.append(j.id)
             if old.state != 'done': self.order.remove(jid)

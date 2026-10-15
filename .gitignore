@@ -70,3 +70,9 @@ autosync/state/
 !/_build/tests/release-tests/*.cjs
 /_build/tests/shell/
 /_build/tests/release-tests/*.json
+
+# 2.3.4：工程技術說明書與單一 Logo 的來源
+!/工程技術說明書.md
+!/_build/logo/
+/_build/logo/舊版/
+!/_build/整理2.3.4.ps1

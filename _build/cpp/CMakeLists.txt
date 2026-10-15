@@ -50,7 +50,6 @@ add_library(swbd_cpp OBJECT
     third_party/zlib/zutil.c
     src/modules/system_tools.cpp
     src/modules/shell_actions.cpp
-    src/modules/disk_tools.cpp
     src/modules/pdf_tools.cpp)
 target_include_directories(swbd_cpp PUBLIC include "${SWBD_SHELL_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"

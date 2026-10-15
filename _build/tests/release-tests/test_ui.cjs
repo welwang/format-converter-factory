@@ -45,7 +45,7 @@ const {chromium}=require('C:/Users/wel30/.cache/codex-runtimes/codex-primary-run
  for(const mode of ['dark','light']){await page.evaluate(m=>{S.theme=m;theme()},mode);await page.screenshot({path:path.join(root,'ui-'+mode+'.png')});results.push({name:'theme_'+mode,ok:true});}
  const logo=await page.locator('img[src="logo.png"]').first().evaluate(i=>i.complete&&i.naturalWidth>0);if(!logo)throw Error('Logo failed to load');results.push({name:'logo_loaded',ok:true});
  await page.evaluate(()=>go('convert'));
- for(const [selector,expected,width,name] of [['#sbhead img','logo-sm.png',34,'sidebar_small_logo'],['#drop img','logo-sm.png',44,'drop_small_logo'],['#amodal img','logo.png',84,'about_full_logo']]){
+ for(const [selector,expected,width,name] of [['#sbhead img','logo.png',34,'sidebar_logo'],['#drop img','logo.png',44,'drop_logo'],['#amodal img','logo.png',84,'about_full_logo']]){
   if(selector.startsWith('#amodal'))await page.evaluate(()=>about(false));
   const item=await page.locator(selector).evaluate(async i=>{await i.decode();return {file:i.getAttribute('src'),width:i.getBoundingClientRect().width,loaded:i.naturalWidth>0}});
   if(item.file!==expected||!item.loaded||Math.abs(item.width-width)>1)throw Error('Incorrect logo placement '+name+': '+JSON.stringify(item));results.push({name,ok:true});

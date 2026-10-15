@@ -202,31 +202,17 @@ class Integration(unittest.TestCase):
         data=json.loads(Path(j.output).with_suffix('.json').read_text(encoding='utf-8'));self.assertEqual(len(data['tests']),4);self.assertTrue(all(t['state']=='done' for t in data['tests']))
         self.assertEqual(list(Path(j.output).parent.glob('zdgc_disk_*.tmp')),[])
 
-    def test_31_disk_check_plan_has_no_repair_switch(self):
-        import disk_tools as DT
-        devices=dict(drives=[dict(drive='C:',filesystem='NTFS',disk_number=0,free=10**9)],recovery=False)
-        p=DT.plan('check','C:',devices=devices);self.assertEqual(p['command'][1:],['C:']);self.assertTrue(p['available'])
-        p=DT.plan('repair','C:',devices=devices);self.assertEqual(p['command'][1:],['C:','/f']);self.assertNotIn('/r',p['command']);self.assertNotIn('/x',p['command'])
-    def test_32_removed_recovery_mode_is_rejected(self):
-        import disk_tools as DT
-        devices=dict(drives=[dict(drive=d,filesystem='NTFS',disk_number=0,free=10**9) for d in ('C:','D:')],recovery=False)
-        with self.assertRaises(ValueError):DT.plan('recovery','C:','C:',devices=devices)
-        with self.assertRaises(ValueError):DT.plan('recovery','C:','D:',devices=devices)
-    def test_33_repair_plan_requires_confirmation_and_fixed_switch(self):
-        import disk_tools as DT
-        devices=dict(drives=[dict(drive='C:',filesystem='NTFS',disk_number=0,free=10**9),dict(drive='D:',filesystem='exFAT',disk_number=1,free=10**9)],recovery=True)
-        p=DT.plan('repair','C:',devices=devices)
-        self.assertIn('/f',p['command']);self.assertTrue(p['warnings']);self.assertNotIn('/r',p['command'])
-        with self.assertRaises(ValueError):DT.launch(p,p['token'],False)
-        with self.assertRaises(ValueError):DT.plan('recovery','D:','C:','photos','regular',devices)
-    def test_34_disk_launch_requires_confirmation(self):
-        import disk_tools as DT
-        p=dict(token='fixture',created=time.time())
-        with self.assertRaises(ValueError):DT.launch(p,'fixture',False)
-        with self.assertRaises(ValueError):DT.launch(p,'wrong',True)
-    def test_35_disk_rejects_shell_input(self):
-        import disk_tools as DT
-        devices=dict(drives=[],recovery=False)
-        with self.assertRaises(ValueError):DT.plan('repair','C: & exit',devices=devices)
+    def test_31_disk_check_and_repair_removed(self):
+        import importlib.util, app
+        self.assertIsNone(importlib.util.find_spec('disk_tools'))
+        for name in ('disk_info','disk_preview','disk_launch','disk_help'):self.assertFalse(hasattr(app.Api,name),name)
+    def test_32_health_check_never_pretends(self):
+        import health_check as HC
+        r=HC.evaluate({},{},dict(network=False))
+        self.assertEqual(r['counts']['ok'],0)
+        self.assertTrue(all(i['state'] in ('untested','partial') for i in r['items']))
+        bad=HC.evaluate({},dict(threads=4,cpu=dict(single_rps=10,multi_rps=30,threads=4,scaling=3,errors=2)),dict(network=False))
+        cpu=next(i for i in bad['items'] if i['id']=='cpu');self.assertEqual(cpu['state'],'bad');self.assertTrue(cpu['advice'])
+        self.assertEqual(HC.options(dict(mode='pro',stress=99999,mem_mb=7))['stress'],180)
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -1,5 +1,5 @@
 ﻿#define AppName "四維八德"
-#define AppVer "2.3.3"
+#define AppVer "2.3.4"
 #ifndef ReleaseRoot
 #define ReleaseRoot AddBackslash(SourcePath) + ".."
 #endif

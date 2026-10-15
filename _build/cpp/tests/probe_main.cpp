@@ -2,7 +2,7 @@
    用法：swbd-cpp-probe <base_dir> <data_dir> <method> [args-json | --args <file>] [--out <file>]
          swbd-cpp-probe <base_dir> <data_dir> --calls <file> [--out <file>]
    含引號的 JSON 在命令列會被 CRT 吃掉引號，因此建議用 --args 指定檔案。
-   --calls 檔是 [{ "m": "方法", "a": [參數…] }, …]；有狀態的方法（例如 disk_preview → disk_launch）
+   --calls 檔是 [{ "m": "方法", "a": [參數…] }, …]；有狀態的方法（例如 cleanup_scan → cleanup_execute）
    必須在同一個行程內連續呼叫才測得到，參數裡寫 "@token" 會代換成前一次回覆的 token 欄位。
    使用 wmain：PowerShell 傳給 char** 的是 ANSI（本機 CP950）位元組，含中文的路徑會壞掉。
    輸出：{"ok":true,"r":...} 或 {"ok":false,"e":"..."}；--calls 模式輸出回覆陣列。
@@ -76,7 +76,7 @@ int wmain(int argc, wchar_t **argv) {
     }
     std::fprintf(stderr, "C++ 核心已註冊 %d 個方法\n", swbd_cpp_method_count());
 
-    /* 多次呼叫模式：有狀態的方法（disk_preview → disk_launch）必須在同一個行程內連續呼叫。
+    /* 多次呼叫模式：有狀態的方法（cleanup_scan → cleanup_execute）必須在同一個行程內連續呼叫。
        參數中的 "@token" 會代換成前一次回覆的 token，讓「預覽完再啟動」測得出來。 */
     if (!calls_file.empty()) {
         std::string calls_text;

@@ -180,9 +180,9 @@ static jval *start_jobs(const jval *items, const jval *opt, int merge)
     return ids;
 }
 
-static const char *IDLE_ONLY[] = { "disk_preview", "disk_launch", "cleanup_scan", "cleanup_execute", NULL };
+static const char *IDLE_ONLY[] = { "cleanup_scan", "cleanup_execute", NULL };
 static const char *NATIVE[] = { "describe", "formats", "media_info", "hwinfo", "start", "status", "cancel", "cancel_all", "clear_done",
-                                "retry", "compare_job", "preview", "cancel_shutdown", "disk_preview", "disk_launch", "cleanup_scan", "cleanup_execute", NULL };
+                                "retry", "compare_job", "preview", "cancel_shutdown", "cleanup_scan", "cleanup_execute", NULL };
 
 static int in(const char *const *l, const char *s) { for (; *l; l++) if (!strcmp(*l, s)) return 1; return 0; }
 

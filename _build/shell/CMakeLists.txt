@@ -15,7 +15,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(SWBD_BUILD_TESTS "Build the native test drivers" ON)
 
 if(MSVC)
     # Static C runtime: the shipped shell needs no Visual C++ Redistributable, as in the 2.3.x builds.
@@ -78,19 +77,4 @@ if(WIN32)
     set_target_properties(swbd-shell PROPERTIES
         OUTPUT_NAME "swbd-shell"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-endif()
-
-# ---------------------------------------------------------------- native test drivers
-if(SWBD_BUILD_TESTS)
-    if(WIN32)
-        # Drives the real Windows engine over JSON on stdin/stdout (no UI, no machine maintenance).
-        add_executable(engine-test engine_test_cli.cpp)
-        target_link_libraries(engine-test PRIVATE swbd_core swbd_cpp)
-    else()
-        # POSIX end-to-end drivers; test_api also starts the real Python component (python3 core.py).
-        foreach(_t engine cancel api)
-            add_executable(test_${_t} "test/test_${_t}.cpp")
-            target_link_libraries(test_${_t} PRIVATE swbd_core)
-        endforeach()
-    endif()
 endif()

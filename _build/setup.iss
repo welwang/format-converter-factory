@@ -52,16 +52,13 @@ Source: "{#ReleaseRoot}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignorev
 Source: "{#ReleaseRoot}\tools\*"; DestDir: "{app}\tools"; Excludes: "libreoffice\*,calibre\*,*.part,*.tmp,ghostscript\vcredist_x64.exe,ghostscript\$PLUGINSDIR\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
 Source: "{#ReleaseRoot}\tools\libreoffice\*"; DestDir: "{app}\tools\libreoffice"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: office
 Source: "{#ReleaseRoot}\tools\calibre\*"; DestDir: "{app}\tools\calibre"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: ebook
-Source: "{#ReleaseRoot}\使用說明.md"; DestDir: "{app}"
+Source: "{#ReleaseRoot}\README.md"; DestDir: "{app}"
+Source: "{#ReleaseRoot}\CHANGELOG.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\授權說明.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\使用授權條款.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\LICENSE"; DestDir: "{app}"
-Source: "{#ReleaseRoot}\版本更新.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\COPYING.AGPL-3.0"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\開源與散布說明.md"; DestDir: "{app}"
-Source: "{#ReleaseRoot}\PDF功能清單.md"; DestDir: "{app}"
-Source: "{#ReleaseRoot}\TEST_RESULTS.md"; DestDir: "{app}"
-Source: "{#ReleaseRoot}\測試報告.html"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ReleaseRoot}\source\*"; DestDir: "{app}\source"; Excludes: "upstream\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
@@ -79,6 +76,16 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\ZhuanDangGongChang\command
 [Run]
 Filename: "{app}\tools\WebView2-offline-x64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安裝視窗元件 WebView2…"; Check: NeedWebView2; Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\四維八德.exe"; Description: "立即開啟四維八德"; Flags: nowait postinstall skipifsilent
+[InstallDelete]
+; 2.3.4 起不再隨附的舊說明與測試報告（升級安裝時清掉）
+Type: files; Name: "{app}\使用說明.md"
+Type: files; Name: "{app}\版本更新.md"
+Type: files; Name: "{app}\PDF功能清單.md"
+Type: files; Name: "{app}\TEST_RESULTS.md"
+Type: files; Name: "{app}\測試報告.html"
+Type: files; Name: "{app}\工程技術說明書.md"
+Type: files; Name: "{app}\assets\logo-sm.png"
+Type: files; Name: "{app}\_internal\ui\logo-sm.png"
 [UninstallDelete]
 Type: files; Name: "{app}\settings.json"
 Type: files; Name: "{app}\hw_cache.json"

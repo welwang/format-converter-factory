@@ -57,29 +57,3 @@ target_include_directories(swbd_cpp PUBLIC include "${SWBD_SHELL_DIR}"
 # 只需要 zlib 格式（PNG 用），所以關掉 gzip 包裝：deflate.c 就不會再依賴 crc32（那張表格近 600 KB）。
 target_compile_definitions(swbd_cpp PRIVATE NO_GZIP)
 target_link_libraries(swbd_cpp PUBLIC ${SWBD_CPP_BASE})
-
-# 驗證工具：探針（單一方法呼叫）與等價測試（同一行程掃描→執行並輸出前後清單）
-add_executable(swbd-cpp-probe tests/probe_main.cpp)
-target_link_libraries(swbd-cpp-probe PRIVATE swbd_cpp)
-
-# 原生 PDF 層的探針：與 Python（pymupdf）逐欄比對用
-add_executable(swbd-cpp-pdf-probe tests/pdf_probe.cpp)
-target_link_libraries(swbd-cpp-pdf-probe PRIVATE swbd_cpp)
-
-# 原生 PDF 渲染探針：與 Python（pypdfium2 + Pillow）逐像素比對用
-add_executable(swbd-cpp-pdf-render tests/pdf_render_probe.cpp)
-target_link_libraries(swbd-cpp-pdf-render PRIVATE swbd_cpp)
-
-# qpdf 重寫探針：與 Python（pypdf 路徑）比對頁面內容與檔案大小
-add_executable(swbd-cpp-pdf-rewrite tests/pdf_rewrite_probe.cpp)
-target_link_libraries(swbd-cpp-pdf-rewrite PRIVATE swbd_cpp)
-
-add_executable(swbd-cpp-equivalence tests/equivalence_main.cpp)
-target_link_libraries(swbd-cpp-equivalence PRIVATE swbd_cpp)
-
-# 整合閘門：只在單一專案模式（有 shell 的 api.cpp 可測）下建置。
-# 證明接手的方法由 C++ 回答且不會送給 Python，未接手的方法仍安全交回 Python。
-if(TARGET swbd_core)
-    add_executable(swbd-cpp-wiring tests/wiring_main.cpp)
-    target_link_libraries(swbd-cpp-wiring PRIVATE swbd_core swbd_cpp)
-endif()

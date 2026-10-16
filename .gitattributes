@@ -1,0 +1,12 @@
+# 統一換行：儲存庫存 LF，Windows 取出時轉成 CRLF
+* text=auto
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.iss text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=crlf
+*.png binary
+*.ico binary
+*.gguf binary
+*.bin binary

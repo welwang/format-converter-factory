@@ -16,7 +16,9 @@ import os, time, json, socket, struct, hashlib, threading, subprocess, statistic
 import engine as E
 
 OK, WARN, BAD, PARTIAL, UNTESTED = 'ok', 'warn', 'bad', 'partial', 'untested'
-STATE_TEXT = {OK: '正常', WARN: '需注意', BAD: '異常', PARTIAL: '部分檢查', UNTESTED: '未測試'}
+DISABLED, NEEDS_CHECK = 'disabled', 'needs_check'          # 已停用（可能是正常設定）、需要進一步確認
+STATE_TEXT = {OK: '正常', WARN: '需注意', BAD: '異常', PARTIAL: '部分檢查', UNTESTED: '未測試',
+              DISABLED: '已停用', NEEDS_CHECK: '需要確認'}
 STAGES = ['認識你的電腦硬體', '檢查設備是否能正常使用', '測試電腦的運算能力', '檢查長時間使用的穩定性', '整理完整健康報告']
 MODES = dict(
     quick=dict(name='快速檢查', stress=30, mem_mb=256, disk_mb=128, pings=5),
@@ -67,7 +69,7 @@ function Ev($providers,$ids,$max=25){
   $f=@{LogName='System';ProviderName=$providers;StartTime=$since}
   if($ids){ $f['Id']=$ids }
   @(Get-WinEvent -FilterHashtable $f -MaxEvents $max -ErrorAction SilentlyContinue | ForEach-Object {
-    [ordered]@{Time=$_.TimeCreated.ToString('yyyy-MM-dd HH:mm');Id=$_.Id;Provider=$_.ProviderName;Level=$_.LevelDisplayName;Message=((([string]$_.Message) -split "`n")[0]).Trim()} })
+    [ordered]@{Time=$_.TimeCreated.ToString('yyyy-MM-dd HH:mm');Id=$_.Id;Provider=$_.ProviderName;Level=$_.LevelDisplayName;RecordId=$_.RecordId;Message=((([string]$_.Message) -split "`n")[0]).Trim()} })
 }
 Step os { $o=Get-CimInstance Win32_OperatingSystem; [ordered]@{Caption=$o.Caption;Version=$o.Version;Build=$o.BuildNumber;LastBoot=$o.LastBootUpTime.ToString('yyyy-MM-dd HH:mm')} }
 Step admin { ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
@@ -513,12 +515,26 @@ def eval_gpu(inv, m):
     not_tested = ['3D 遊戲畫面與顯示記憶體（VRAM）壓力測試尚未提供']
     if enc and enc.get('hw'): pro.append(['影音硬體編碼測試', f"{enc.get('encoder')} · {'通過' if enc.get('ok') else '失敗：' + enc.get('error', '')}"])
     elif enc: not_tested.append('影音硬體加速：沒有偵測到可用的顯示卡編碼器，影片轉檔會使用處理器')
-    broken = [g for g in gpus if (g.get('ConfigManagerErrorCode') or 0) != 0 or (g.get('Status') and g.get('Status') != 'OK')]
-    if broken:
-        code = broken[0].get('ConfigManagerErrorCode') or 0
-        return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', BAD, f"{broken[0].get('Name')}：{DEVICE_CODES.get(code, '裝置回報錯誤')}", explain,
+    # 與 eval_devices 用同一條規則：22 已停用、24 未連接、45 已移除都不是故障。
+    # 內建顯示卡被停用常常是使用者的正常設定（例如有獨立顯示卡），不能因此說整台電腦的顯示卡故障。
+    inactive = (22, 24, 45)
+    faults = [g for g in gpus if (g.get('ConfigManagerErrorCode') or 0) not in inactive
+              and ((g.get('ConfigManagerErrorCode') or 0) != 0 or (g.get('Status') or 'OK') not in ('OK', 'Degraded'))]
+    disabled = [g for g in gpus if (g.get('ConfigManagerErrorCode') or 0) in inactive]
+    active = [g for g in gpus if g not in faults and g not in disabled]
+    if faults:
+        code = faults[0].get('ConfigManagerErrorCode') or 0
+        return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', BAD, f"{faults[0].get('Name')}：{DEVICE_CODES.get(code, '裝置回報錯誤')}", explain,
                      impact='畫面可能變得很慢、解析度變低，或遊戲與影片無法使用硬體加速。',
                      advice=['到顯示卡廠商網站（NVIDIA／AMD／Intel）下載最新驅動程式並安裝', '安裝後重新開機'], pro=pro, events=tdr, not_tested=not_tested)
+    if disabled and not active:
+        names = '、'.join((g.get('Name') or '顯示卡') for g in disabled[:2])
+        return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', DISABLED,
+                     f"{names}：已停用（沒有其他顯示卡在運作）", explain,
+                     impact='目前沒有顯示卡在運作，畫面會由 Windows 的基本顯示驅動處理，可能較慢。',
+                     advice=['如果不確定是不是刻意停用的，到裝置管理員確認要不要重新啟用',
+                             '有獨立顯示卡時，停用內建顯示卡是常見設定，不需要處理'],
+                     pro=pro, events=tdr, not_tested=not_tested)
     if tdr:
         return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', WARN, f'過去 {EVENT_DAYS} 天畫面驅動停止回應 {len(tdr)} 次', explain + '每次 Windows 都自動恢復了，但次數多代表不穩定。',
                      impact='使用中可能突然黑畫面一下、遊戲閃退。', advice=['更新顯示卡驅動程式', '檢查顯示卡散熱與灰塵', '關閉顯示卡超頻'], pro=pro, events=tdr, not_tested=not_tested)
@@ -527,7 +543,11 @@ def eval_gpu(inv, m):
                      advice=['更新顯示卡驅動程式'], pro=pro, not_tested=not_tested)
     if not gpus:
         return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', UNTESTED, '沒有取得顯示卡資料', explain, pro=pro, not_tested=not_tested)
-    return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', OK, '畫面與圖形運算正常', explain + ('裝置狀態、錯誤記錄與影音編碼測試都正常。' if enc.get('hw') else '裝置狀態與錯誤記錄都正常。'), pro=pro, events=tdr, not_tested=not_tested)
+    note = ('裝置狀態、錯誤記錄與影音編碼測試都正常。' if enc.get('hw') else '裝置狀態與錯誤記錄都正常。')
+    if disabled:
+        note += ('另有 ' + '、'.join((g.get('Name') or '顯示卡') for g in disabled[:2])
+                 + ' 處於已停用狀態；有獨立顯示卡時這是常見設定，不影響目前運作。')
+    return _item('gpu', '顯示卡 GPU', '畫面和遊戲會不會出問題？', OK, '畫面與圖形運算正常', explain + note, pro=pro, events=tdr, not_tested=not_tested)
 
 
 def eval_cooling(inv, m):
@@ -605,6 +625,53 @@ def eval_devices(inv):
     return _item('devices', '其他裝置與驅動程式', '零件都有被 Windows 認得嗎？', OK, '所有裝置都正常運作', explain + ('有些裝置是停用或未連接，這不算問題。' if devs else ''), pro=pro)
 
 
+
+def _parse_time(text):
+    """把 'yyyy-MM-dd HH:mm' 轉成時間；失敗回 None（不猜測）。"""
+    import datetime as _dt
+    for fmt in ('%Y-%m-%d %H:%M', '%Y-%m-%d %H:%M:%S'):
+        try: return _dt.datetime.strptime(str(text), fmt)
+        except (TypeError, ValueError): continue
+    return None
+
+
+def _incident_groups(bug, power, whea, window_min=30):
+    """把時間相近的事件併成「同一次故障」，避免把一次當機算成好幾次故障。
+
+    回傳 [{when, days_ago, kinds, items}]，items 保留型別、Event ID 與 Record ID 當證據。
+    只有在時間可解析時才合併；時間不明的記錄單獨列出，不推測它屬於哪一次。
+    """
+    import datetime as _dt
+    now = _dt.datetime.now()
+    tagged = []
+    for kind, rows in (('藍色畫面', bug), ('非正常關機', power), ('硬體錯誤回報', whea)):
+        for row in as_list(rows):
+            when = _parse_time(row.get('Time') or row.get('TimeCreated'))
+            tagged.append(dict(kind=kind, when=when, row=row))
+    known = sorted([t for t in tagged if t['when']], key=lambda t: t['when'])
+    unknown = [t for t in tagged if not t['when']]
+    groups = []
+    for item in known:
+        if groups and (item['when'] - groups[-1]['when']).total_seconds() <= window_min * 60:
+            groups[-1]['when'] = item['when']
+            groups[-1]['items'].append(item)
+        else:
+            groups.append(dict(when=item['when'], items=[item]))
+    for g in groups:
+        g['kinds'] = sorted({i['kind'] for i in g['items']})
+        g['days_ago'] = max(0.0, (now - g['when']).total_seconds() / 86400.0)
+        ev = []
+        for i in g['items']:
+            row = i['row']
+            ev.append('%s #%s%s' % (i['kind'], row.get('Id') if row.get('Id') is not None else '代號未提供',
+                                    ('／記錄 %s' % row.get('RecordId')) if row.get('RecordId') is not None else ''))
+        g['summary'] = '%s：%s' % (g['when'].strftime('%Y-%m-%d %H:%M'), '、'.join(ev))
+    for item in unknown:
+        groups.append(dict(when=None, items=[item], kinds=[item['kind']], days_ago=None,
+                           summary='時間不明的%s記錄（Event ID %s）' % (item['kind'], item['row'].get('Id'))))
+    return groups
+
+
 def eval_stability(inv, m):
     whea, power, bug = as_list(inv.get('ev_whea')), as_list(inv.get('ev_power')), as_list(inv.get('ev_bugcheck'))
     explain = '這裡檢查 Windows 的記錄，看最近有沒有突然斷電關機、藍色畫面，或硬體自己回報的錯誤。'
@@ -617,6 +684,34 @@ def eval_stability(inv, m):
                      '無法讀取 Windows 記錄' if not s else '穩定性測試沒有出錯，但無法讀取 Windows 記錄', explain, pro=pro,
                      not_tested=['Windows 事件記錄'])
     fatal = [e for e in whea if e.get('Level') in ('錯誤', 'Error', '重大', 'Critical') or e.get('Id') in (1, 18, 20, 46)]
+    # 事件關聯：同一段時間內的藍色畫面／非正常關機／WHEA 可能是同一次故障，先合併再判定。
+    groups = _incident_groups(bug, power, whea)
+    if groups:
+        raw = len(bug) + len(power) + len(whea)
+        pro.append(['依時間關聯後的事件', f'{len(groups)} 次（原始記錄 {raw} 筆）'])
+        recent = [g for g in groups if g['days_ago'] is not None and g['days_ago'] <= 7]
+        newest = min((g['days_ago'] for g in groups if g['days_ago'] is not None), default=None)
+        finding = '；'.join(g['summary'] for g in groups[:6])
+        age = ('最近一次在 %.1f 天前' % newest) if newest is not None else '時間無法解析'
+        if recent and fatal:
+            return _item('stability', '系統穩定性', '會不會突然當機？', NEEDS_CHECK,
+                         f'最近 {EVENT_DAYS} 天有 {len(groups)} 次系統中斷事件（{age}），其中包含硬體錯誤回報', explain,
+                         impact='可能隨時當機，未存檔的工作會遺失。',
+                         advice=['先備份重要資料', '更新 Windows 與驅動程式',
+                                 '這只是事件記錄，不能直接判定哪個零件壞了；持續發生時請找專業檢修'],
+                         finding=finding, events=events, pro=pro, causes=[])
+        if recent:
+            return _item('stability', '系統穩定性', '會不會突然當機？', WARN,
+                         f'最近 {EVENT_DAYS} 天有 {len(groups)} 次系統中斷事件（{age}）', explain + '「非正常關機」也包含直接按電源鍵或停電。',
+                         impact='若不是自己按掉的，代表電腦曾突然斷電或當機。',
+                         advice=['確認插座與電源線穩固', '更新 Windows 與驅動程式', '先備份重要資料'],
+                         finding=finding, events=events, pro=pro)
+        return _item('stability', '系統穩定性', '會不會突然當機？', NEEDS_CHECK,
+                     (f'最近 {EVENT_DAYS} 天有 {len(groups)} 次系統中斷事件，最近一次在 {newest:.1f} 天前'
+                      if newest is not None else f'最近 {EVENT_DAYS} 天有 {len(groups)} 次系統中斷事件，時間無法解析'), explain,
+                     impact='屬於歷史紀錄，目前沒有再發生的證據；仍需確認原因。',
+                     advice=['先備份重要資料', '若再次發生，記下時間再回頭比對這些記錄'],
+                     finding=finding, events=events, pro=pro)
     if bug or fatal or s.get('errors'):
         what = '、'.join(x for x in [f'藍色畫面 {len(bug)} 次' if bug else '', f'嚴重硬體錯誤 {len(fatal)} 次' if fatal else '',
                                      f"穩定性測試算錯 {s['errors']} 次" if s.get('errors') else ''] if x)
@@ -806,7 +901,19 @@ def report_lines(r):
     L += ['', '【專業資料】']
     for i in r['items']:
         if i['pro']: L += [f"〔{i['name']}〕"] + [f'　{k}：{v}' for k, v in i['pro']]
-        for e in i['events'][:10]: L.append(f"　事件 {e.get('Time')} {e.get('Provider')} #{e.get('Id')}：{e.get('Message', '')[:120]}")
+        for e in i['events'][:10]:
+            def _pick(*names):                    # PowerShell 端不同步驟的欄位名不完全一樣
+                for n in names:
+                    v = e.get(n)
+                    if v not in (None, '', 'None'): return v
+                return None
+            when = _pick('Time', 'TimeCreated', 'time') or '時間未提供'
+            prov = _pick('Provider', 'ProviderName', 'Source', 'source') or '來源未提供'
+            eid = _pick('Id', 'EventID', 'ID', 'id')
+            code = ('#' + str(eid)) if eid is not None else '事件代號未提供'
+            msg = (e.get('Message') or e.get('message') or '').strip()
+            L.append('　事件 %s · %s %s%s' % (when, prov, code,
+                     ('：' + msg[:120]) if msg else '（這一筆沒有訊息內容）'))
     nt = [(i['name'], x) for i in r['items'] for x in i['not_tested']]
     if nt: L += ['', '【沒有測到的部分】'] + [f'　{n}：{x}' for n, x in nt]
     L += ['', '說明：這份報告只描述這次實際量到的結果；「未測試」不代表正常。溫度感測器不一定是處理器核心溫度，警告門檻依廠商規格而定。']

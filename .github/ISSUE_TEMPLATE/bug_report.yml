@@ -1,0 +1,81 @@
+name: 錯誤回報
+description: 程式出錯、轉檔失敗或結果不正確
+title: "[錯誤] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 謝謝回報！安全性問題請不要在這裡公開，改用 Security → Report a vulnerability。
+  - type: input
+    id: version
+    attributes:
+      label: 四維八德版本
+      description: 「關於」視窗顯示的版本
+      placeholder: "2.3.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: 使用方式
+      options:
+        - 安裝版
+        - 免安裝版
+        - 自行從原始碼建置
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能
+      options:
+        - 一般轉檔
+        - PDF 工作台
+        - 工具箱
+        - 離線 AI（字幕、音檔轉文字、會議總結、摘要、翻譯）
+        - 交付工作台
+        - 螢幕錄影
+        - 下載影片
+        - 自動化
+        - 電腦健康檢查
+        - 其他電腦工具
+        - 安裝與啟動
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重現步驟
+      placeholder: |
+        1. 加入一個 HEIC 檔案
+        2. 選擇轉成 JPG
+        3. 按開始轉檔
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期結果與實際結果
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: 記錄檔
+      description: 側邊欄「開啟記錄檔」→ logs\zdgc.log 的相關內容
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 確認
+      options:
+        - label: 我附上的檔案與記錄不含個人或機密資料
+          required: true

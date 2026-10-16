@@ -258,7 +258,7 @@ class Api:
     def open_file(self, path):
         return FA.open_file(path)
     def open_doc(self, name):
-        document = {'license': '授權說明.md', 'guide': '使用說明.md', 'eula': '使用授權條款.md', 'tests': '測試報告.html'}.get(name)
+        document = {'license': '授權說明.md', 'guide': 'README.md', 'eula': '使用授權條款.md', 'changes': 'CHANGELOG.md'}.get(name)
         if not document: raise ValueError('不支援的說明文件')
         return FA.open_file(os.path.join(E.base_dir(), document))
     def open_log(self):

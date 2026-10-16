@@ -26,7 +26,7 @@ try {
     foreach ($name in 'tools','source','assets') {
         Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $candidate -Recurse
     }
-    foreach ($name in '使用說明.md','授權說明.md','使用授權條款.md','LICENSE','COPYING.AGPL-3.0','開源與散布說明.md','PDF功能清單.md','版本更新.md','TEST_RESULTS.md','測試報告.html') {
+    foreach ($name in 'README.md','CHANGELOG.md','授權說明.md','使用授權條款.md','LICENSE','COPYING.AGPL-3.0','開源與散布說明.md') {
         Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $candidate
     }
     if ((Invoke-Native { & $python -c "import sys;sys.path.insert(0,sys.argv[1]);import engine as E;E.base_dir=lambda:sys.argv[2];m=E.missing_components();print(m);sys.exit(bool(m))" (Join-Path $buildRoot 'src') $candidate }) -ne 0) { throw '缺少完整離線元件，停止打包。' }
@@ -66,3 +66,23 @@ try {
     }
     Write-Host "候選版本與測試保存在：$stage。現有程式未替換；通過測試後可另行部署，公開散布另需完成第三方來源審核。"
 } finally { Pop-Location }
+# ── 開源發布合規檢查（每次建置都跑；開發與測試建置不因此失敗）────────────────
+# 這一段只做提示：要「公開發行」時必須讓 compliance\gate_release.ps1 回傳 0。
+# 設 SWBD_REQUIRE_COMPLIANCE=1 會讓建置在閘門未通過時直接失敗（CI 或發布流程用）。
+$beforeCompliance = $LASTEXITCODE          # 合規閘門的離開碼不得外洩成建置失敗
+$complianceGate = Join-Path $PSScriptRoot 'compliance\gate_release.ps1'
+if (Test-Path -LiteralPath $complianceGate) {
+    Write-Host ''
+    Write-Host '=== 開源發布合規檢查 ===' -ForegroundColor Cyan
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $complianceGate   # 子行程：閘門結尾是 exit，直接 & 會把整個建置腳本結束掉
+    $complianceExit = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    if ($complianceExit -ne 0) {
+        Write-Host '合規閘門未通過：這次建置的成品不得公開發行。' -ForegroundColor Red
+        Write-Host '（開發與測試可繼續；發布前必須讓 gate_release.ps1 回傳 0）' -ForegroundColor Yellow
+        if ($env:SWBD_REQUIRE_COMPLIANCE -eq '1') { exit $complianceExit }
+    }
+}
+$global:LASTEXITCODE = 0   # 明確歸零（必須寫到 global：& 是子範圍，寫區域變數呼叫端看不到）：這個腳本的成功判準是終止錯誤（$ErrorActionPreference=Stop），不是殘留的原生離開碼；閘門的結果另由 gate_release.ps1 判定

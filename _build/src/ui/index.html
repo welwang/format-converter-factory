@@ -180,7 +180,7 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
 .hc-st{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;white-space:nowrap}
 .hc-st:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
 .hc-ok{color:var(--green);background:rgba(52,199,89,.12)}.hc-warn{color:var(--orange);background:rgba(255,149,0,.13)}.hc-bad{color:var(--red);background:rgba(255,59,48,.12)}
-.hc-partial{color:var(--blue);background:rgba(0,122,255,.1)}.hc-untested{color:var(--tx2);background:var(--fill)}
+.hc-partial{color:var(--blue);background:rgba(0,122,255,.1)}.hc-disabled{color:var(--tx2);background:var(--fill)}.hc-needs_check{color:var(--tx2);background:rgba(255,149,0,.12)}.hc-untested{color:var(--tx2);background:var(--fill)}
 .hc-stage{display:flex;gap:12px;align-items:flex-start;padding:10px 14px}.hc-stage+.hc-stage{border-top:1px solid var(--sep)}
 .hc-stage i{flex:none;width:20px;height:20px;border-radius:50%;border:2px solid var(--tx3);margin-top:1px;display:grid;place-items:center;font:700 11px/1 inherit;font-style:normal;color:#fff;box-sizing:border-box}
 .hc-stage.done i{background:var(--green);border-color:var(--green)}.hc-stage.now i{border-color:var(--blue);border-right-color:transparent;animation:hcspin .9s linear infinite}
@@ -355,7 +355,7 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
 <p id="awel" style="display:none;color:var(--tx);font-weight:600">歡迎使用！</p>
 <p>這是<b>開源版</b>，<b>完全免費</b>、<b>沒有使用期限</b>，<br>所有功能都能使用，也不會跳出付費提醒。</p>
 <p class="small">所有轉檔都在你的電腦上完成，檔案不會上傳到任何地方。</p><p class="small">© 2026 Wel Wang．GPLv3／AGPLv3 開源授權</p>
-<div class="links"><button class="btn plain" data-doc="guide">使用說明</button><button class="btn plain" data-doc="eula">使用授權條款</button><button class="btn plain" data-doc="license">第三方元件聲明</button><button class="btn plain" data-doc="tests">測試結果</button><button class="btn plain" data-doc="log">記錄檔</button></div>
+<div class="links"><button class="btn plain" data-doc="guide">使用說明</button><button class="btn plain" data-doc="eula">使用授權條款</button><button class="btn plain" data-doc="license">第三方元件聲明</button><button class="btn plain" data-doc="changes">版本更新</button><button class="btn plain" data-doc="log">記錄檔</button></div>
 <button class="btn pri lg" id="aok" style="margin-top:16px">開始使用</button></div></div>
 <div class="toast" id="toast"></div>
 <div class="dropov" id="dropov"><div class="box"><svg class="i" data-i="download"></svg><b id="dropt">放開以加入檔案</b><span id="drops"></span></div></div>
@@ -685,7 +685,9 @@ let hcLevel='normal',hcJob='',hcShown='',hcData=null,hcTab='overview',hcOpen={};
 const hcSt=(st,t)=>`<span class="hc-st hc-${st}">${esc(t)}</span>`;
 $('#hc_level').onclick=e=>{const v=e.target.dataset.v;if(!v)return;hcLevel=v;setSeg('#hc_level',v);$('#hc').classList.toggle('pro',v=='pro');if(hcData){hcTab=v=='pro'?'pro':'overview';hcRender()}};
 $('#hc_go').onclick=()=>waiting($('#hc_go'),async()=>{const pro=hcLevel=='pro';const o={mode:pro?'pro':$('#hc_mode').value,network:$('#hc_net').checked};if(pro){o.stress=+$('#hc_stress').value;o.mem_mb=+$('#hc_mem').value}
- const ids=await call('health_check',o);hcJob=ids&&ids[0]||'';hcShown='';hcData=null;$('#hc_result').style.display='none';hcProgress({state:'queued',progress:0,msg:''});poll()});
+ let ids;try{ids=await API.health_check(o)}catch(e){const m=String(e.message||e).replace(/^.*?Error:\s*/,'');if(/沒有這個功能/.test(m))hcOutdated();else toast(m,1);return}hcJob=ids&&ids[0]||'';hcShown='';hcData=null;$('#hc_result').style.display='none';hcProgress({state:'queued',progress:0,msg:''});poll()});
+function hcOutdated(){const box=$('#hc_progress');box.style.display='';$('#hc_go').disabled=true;
+ box.innerHTML=`<div class="row"><span class="lab" style="white-space:normal"><b>背景元件還是舊版，暫時不能做健康檢查</b><small style="white-space:normal">畫面已經更新，但正在執行的背景元件 swbd-core.exe 是 ${esc(window.CORE_VER||'更新前')} 版，還沒有健康檢查。請關閉四維八德，執行 _build\\部署最新候選版.ps1 換上已通過測試的新版，再重新開啟。</small></span></div>`}
 function hcProgress(j){const box=$('#hc_progress');box.style.display='';const n=j.state=='queued'?-1:Math.min(4,Math.floor((j.progress||0)*5));const detail=(j.msg||'').split(' · ')[1]||'';
  box.innerHTML=`<div class="row"><b class="lab">${n<0?'等待開始…':`第 ${n+1} / 5 階段`}<small>${n<0?'':esc(HC_STAGES[n])}</small></b><button class="btn plain" id="hc_stop">停止檢查</button></div>`+
   HC_STAGES.map((t,i)=>`<div class="hc-stage ${i<n?'done':i==n?'now':'wait'}"><i>${i<n?'✓':''}</i><div>${esc(t)}${i==n&&detail?`<small>${esc(detail)}</small>`:''}</div></div>`).join('');
@@ -742,7 +744,7 @@ function hcPro(r){const tested=r.items.filter(i=>i.state!='untested').length;
   ${i.not_tested&&i.not_tested.length?`<div class="hc-ev">未測試：${i.not_tested.map(esc).join('；')}</div>`:''}</div>`).join('')}
 /* ---------- boot ---------- */
 window.addEventListener('pywebviewready',async()=>{API=window.pywebview.api;const r=await API.init();S=r.settings;TS=r.tools;
- PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');$('#aed').textContent=(r.edition||'開源版')+'・免費・沒有期限';document.title='四維八德（'+(r.edition||'開源版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
+ PC=r.pc||{};$('#aver').textContent='版本 '+(r.version||'');window.CORE_VER=r.version||'';if(!/^(2\.3\.([4-9]|\d\d)|2\.([4-9]|\d\d)\.|[3-9]\.)/.test(window.CORE_VER))hcOutdated();$('#aed').textContent=(r.edition||'開源版')+'・免費・沒有期限';document.title='四維八德（'+(r.edition||'開源版')+'）';if(!S.welcomed)setTimeout(()=>about(true),400);if(!['auto','light','dark'].includes(S.theme))S.theme='auto';theme();presetUI();outUI();
  sw('hw',S.hwaccel);sw('fastcopy',S.fastcopy!==false);sw('loudnorm',S.loudnorm);$('#finsel').value=S.finish||'sound';
  if(S.qmin){$('#activity').classList.add('min');$('#amin').style.transform='rotate(180deg)'}
  if((S.dl||{}).out_dir)$('#d_dir').textContent=S.dl.out_dir;if(S.dl){if(S.dl.quality)$('#d_q').value=S.dl.quality;sw('d_subs',S.dl.subs);sw('d_pl',S.dl.playlist);if(S.dl.thumb===false)sw('d_thumb',false)}

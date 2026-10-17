@@ -14,6 +14,12 @@ DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 DisableProgramGroupPage=yes
+; 已有安裝時走「更新」：沿用原目錄、不顯示目錄頁、偵測執行中的程式。
+DisableDirPage=auto
+UsePreviousAppDir=yes
+CloseApplications=yes
+RestartApplications=no
+AppMutex=Local\SiWeiBaDe.SingleInstance
 OutputDir={#ReleaseRoot}\輸出
 OutputBaseFilename=四維八德_{#AppVer}_離線安裝程式
 Compression=lzma2/max
@@ -106,4 +112,76 @@ var v: String;
 begin
   Result := not ((RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', v) and (v <> '') and (v <> '0.0.0.0'))
     or (RegQueryStringValue(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', v) and (v <> '') and (v <> '0.0.0.0')));
+end;
+{ ── 更新既有安裝時保留使用者資料 ─────────────────────────────────────────
+  Inno 在升級時會先執行舊版的解除安裝程式，而舊版的 [UninstallDelete] 會刪除
+  settings.json、window.ini、watch_state.json、hw_cache*.json、ffmpeg_caps.json、
+  logs\、hardware-tests\、models\、掃描原圖\、HTML原稿\。
+  若不先備份，使用者一更新就會失去設定、已存流程、健康檢查報告與輸出成品。
+  這裡在 PrepareToInstall（舊版解除安裝之前）備份到暫存目錄，安裝完成後還原。 }
+var
+  UpgradeBackup: String;
+  UpgradeNeeded: Boolean;
+
+function HasPreviousInstall: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\unins000.exe')) or
+            DirExists(ExpandConstant('{app}\_internal'));
+end;
+
+procedure CopyTree(const Src, Dst: String);
+var
+  FindRec: TFindRec;
+  Sub: String;
+begin
+  if not DirExists(Src) then Exit;
+  ForceDirectories(Dst);
+  if FindFirst(Src + '\*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+        begin
+          Sub := Src + '\' + FindRec.Name;
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+            CopyTree(Sub, Dst + '\' + FindRec.Name)
+          else
+            CopyFile(Sub, Dst + '\' + FindRec.Name, False);
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
+procedure CopyUserData(const FromDir, ToDir: String);
+begin
+  ForceDirectories(ToDir);
+  if FileExists(FromDir + '\settings.json') then CopyFile(FromDir + '\settings.json', ToDir + '\settings.json', False);
+  if FileExists(FromDir + '\window.ini') then CopyFile(FromDir + '\window.ini', ToDir + '\window.ini', False);
+  if FileExists(FromDir + '\watch_state.json') then CopyFile(FromDir + '\watch_state.json', ToDir + '\watch_state.json', False);
+  if FileExists(FromDir + '\hw_cache.json') then CopyFile(FromDir + '\hw_cache.json', ToDir + '\hw_cache.json', False);
+  if FileExists(FromDir + '\hw_cache_c.json') then CopyFile(FromDir + '\hw_cache_c.json', ToDir + '\hw_cache_c.json', False);
+  if FileExists(FromDir + '\ffmpeg_caps.json') then CopyFile(FromDir + '\ffmpeg_caps.json', ToDir + '\ffmpeg_caps.json', False);
+  CopyTree(FromDir + '\logs', ToDir + '\logs');
+  CopyTree(FromDir + '\hardware-tests', ToDir + '\hardware-tests');
+  CopyTree(FromDir + '\models', ToDir + '\models');
+  CopyTree(FromDir + '\掃描原圖', ToDir + '\掃描原圖');
+  CopyTree(FromDir + '\HTML原稿', ToDir + '\HTML原稿');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  UpgradeNeeded := HasPreviousInstall;
+  if not UpgradeNeeded then Exit;
+  UpgradeBackup := ExpandConstant('{tmp}\upgrade-backup');
+  CopyUserData(ExpandConstant('{app}'), UpgradeBackup);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and UpgradeNeeded then
+    CopyUserData(UpgradeBackup, ExpandConstant('{app}'));
 end;

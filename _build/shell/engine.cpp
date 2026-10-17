@@ -913,12 +913,10 @@ static char *lo_profile(engine *e)
     return u;
 }
 
-static void conv_office(engine *e, job *j)
+/* LibreOffice 把 src 轉成 j->target，放到已決定好的 j->output。呼叫端負責 office_slots 與 j->output。 */
+static void office_convert(engine *e, job *j, const char *src)
 {
-    if (!e->soffice) { fail(j, "需要 LibreOffice 才能轉這個格式"); return; }
-    if (!acquire(e, &e->office_slots, j, "等待 Office 轉換元件")) return;
-    const char *src = j->files[0], *t = j->target;
-    j->output = out_path(e, j, src, t);
+    const char *t = j->target;
     char *tmp = make_temp_dir("zdgc_");
     char ext[32]; ext_of(src, ext, sizeof ext);
     char conv[1024];
@@ -949,6 +947,14 @@ static void conv_office(engine *e, job *j)
     }
     free(found); free(profile);
     remove_tree(tmp); free(tmp);
+}
+
+static void conv_office(engine *e, job *j)
+{
+    if (!e->soffice) { fail(j, "需要 LibreOffice 才能轉這個格式"); return; }
+    if (!acquire(e, &e->office_slots, j, "等待 Office 轉換元件")) return;
+    j->output = out_path(e, j, j->files[0], j->target);
+    office_convert(e, j, j->files[0]);
     release(e, &e->office_slots);
 }
 
@@ -976,6 +982,27 @@ static void conv_doc(engine *e, job *j)
 static void conv_ebook(engine *e, job *j)
 {
     if (!e->calibre) { conv_doc(e, j); return; }
+    if (!strcmp(j->target, "pdf")) {
+        /* 電子書→PDF：Calibre 先轉 DOCX、再由 LibreOffice 輸出 PDF。Calibre 自己的 PDF 輸出需要
+           約 200 MB 的 Qt WebEngine，安裝包已不附；版面由 LibreOffice 的 Writer 排版。 */
+        if (!e->soffice) { fail(j, "電子書轉 PDF 需要 LibreOffice（安裝時請選「離線 Office」元件）"); return; }
+        if (!acquire(e, &e->office_slots, j, "等待電子書轉換元件")) return;
+        j->output = out_path(e, j, j->files[0], "pdf");
+        char *tmp = make_temp_dir("zdgc_eb_");
+        char *mid = path_join(tmp, "book.docx");
+        strv cmd = {0};
+        sv_add(&cmd, e->calibre); sv_add(&cmd, j->files[0]); sv_add(&cmd, mid);
+        const int ok = run_simple(e, j, &cmd, "Calibre", NULL);
+        sv_free(&cmd);
+        if (ok && !j->cancelled) {
+            if (file_size(mid) > 0) office_convert(e, j, mid);
+            else fail(j, "Calibre 沒有產生中間檔（DOCX）");
+        }
+        if (j->state != Q_ERROR && !j->cancelled) snprintf(j->encoder, sizeof j->encoder, "Calibre＋LibreOffice");
+        free(mid); remove_tree(tmp); free(tmp);
+        release(e, &e->office_slots);
+        return;
+    }
     if (!acquire(e, &e->office_slots, j, "等待電子書轉換元件")) return;
     j->output = out_path(e, j, j->files[0], j->target);
     strv cmd = {0};
@@ -1988,7 +2015,7 @@ static jval *targets_for(engine *e, const char *cat, const char *ext)
         if (e->soffice) { ADD("pdf"); if (in_list(calc, ext)) { ADD("xlsx"); ADD("ods"); ADD("csv"); } if (in_list(imp, ext)) { ADD("pptx"); ADD("odp"); } }
     } else if (!strcmp(cat, "ebook")) {
         static const char *cb[] = { "epub", "mobi", "azw3", "pdf", "docx", "txt", NULL }, *pd[] = { "docx", "html", "md", "txt", "odt", NULL };
-        if (e->calibre) for (int i = 0; cb[i]; i++) ADD(cb[i]);
+        if (e->calibre) { for (int i = 0; cb[i]; i++) if (strcmp(cb[i], "pdf") || e->soffice) ADD(cb[i]); }   /* 轉 PDF 經 LibreOffice */
         else if (in_list(PANDOC_IN, ext) && e->pandoc) for (int i = 0; pd[i]; i++) ADD(pd[i]);
     } else if (!strcmp(cat, "archive")) { if (e->sevenzip) { list[n++] = "extract"; list[n++] = "zip"; list[n++] = "7z"; } }
     else if (!strcmp(cat, "subtitle")) { ADD("srt"); ADD("ass"); ADD("vtt"); }

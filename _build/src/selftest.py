@@ -80,12 +80,68 @@ def main(arg=None):
     def wait(ids, limit=600):
         t0 = time.time()
         while any(eng.jobs[i].state in ('queued', 'running') for i in ids) and time.time() - t0 < limit: time.sleep(0.1)
-    def report(name, ids):
+    def report(name, ids, check=None):
+        """成功＝工作完成、有成品，而且（有 check 時）成品內容符合預期。只看「有沒有檔案」會漏掉
+        「NVENC 分割只切出 1 段」這類結果錯誤但檔案存在的問題。"""
         for i in ids:
             j = eng.jobs[i]; p = j.output or ''
             ok = bool(j.state == 'done' and (os.path.isfile(p) and os.path.getsize(p) > 0 or os.path.isdir(p) and os.listdir(p)))
+            why = '' if ok else j.msg
+            if ok and check:
+                try: why = check(p) or ''
+                except Exception as ex: why = f'檢查失敗：{ex}'
+                ok = not why
             results.append(ok)
-            log(f"{'OK  ' if ok else 'FAIL'} {name:34} {j.elapsed:6.2f}s  {(j.out_size or 0) // 1024:>7} KB  {j.encoder[:50]}  {'' if ok else j.msg}")
+            log(f"{'OK  ' if ok else 'FAIL'} {name:34} {j.elapsed:6.2f}s  {(j.out_size or 0) // 1024:>7} KB  {j.encoder[:50]}  {why}")
+
+    # ---------- 成品內容檢查：回傳錯誤說明，符合就回傳 None ----------
+    def files_in(p): return sorted(os.path.join(r, f) for r, _, fs in os.walk(p) for f in fs) if os.path.isdir(p) else [p]
+    def media_of(p, ext=('.mp4', '.mkv', '.mov', '.webm', '.mp3', '.m4a', '.m4r', '.wav', '.flac', '.opus')):
+        return [f for f in files_in(p) if f.lower().endswith(ext)]
+    def count(n, ext):
+        def chk(p):
+            got = len([f for f in files_in(p) if f.lower().endswith(ext)])
+            return None if got == n else f'應有 {n} 個 {ext} 檔，實際 {got} 個'
+        return chk
+    def duration(lo, hi):
+        def chk(p):
+            m = media_of(p)
+            if not m: return '找不到影音成品'
+            d = E.probe_info(m[0])['dur']
+            return None if lo <= d <= hi else f'長度應在 {lo:g}～{hi:g} 秒，實際 {d:.2f} 秒'
+        return chk
+    def video_size(w=None, h=None, square=False):
+        def chk(p):
+            m = media_of(p, ('.mp4', '.mkv', '.mov', '.webm'))
+            if not m: return '找不到影片成品'
+            i = E.probe_info(m[0]); W, H = i['width'], i['height']
+            if square and W != H: return f'應為正方形，實際 {W}×{H}'
+            if w and W != w: return f'寬度應為 {w}，實際 {W}'
+            if h and H != h: return f'高度應為 {h}，實際 {H}'
+            return None
+        return chk
+    def image_long(n):
+        def chk(p):
+            from PIL import Image
+            with Image.open(files_in(p)[0]) as im: W, H = im.size
+            return None if max(W, H) == n else f'最長邊應為 {n}，實際 {W}×{H}'
+        return chk
+    def pdf_pages(n):
+        def chk(p):
+            from pypdf import PdfReader
+            got = len(PdfReader(files_in(p)[0]).pages)
+            return None if got == n else f'應有 {n} 頁，實際 {got} 頁'
+        return chk
+    def pdf_encrypted(p):
+        from pypdf import PdfReader
+        return None if PdfReader(files_in(p)[0]).is_encrypted else '成品沒有加密'
+    def all_of(*checks):
+        def chk(p):
+            for c in checks:
+                why = c(p)
+                if why: return why
+            return None
+        return chk
 
     log('── 轉檔 ──')
     conv = [(['v.mp4'], 'mkv', {}), (['v.mp4'], 'mp4', dict(height=480)), (['v.mp4'], 'webm', {}), (['v.mp4'], 'gif', dict(trim_end=3)),
@@ -94,11 +150,17 @@ def main(arg=None):
             (['i.heic'], 'jpg', {}), (['alpha.png'], 'jpg', {}), (['alpha.png'], 'webp', {}), (['alpha.png'], 'avif', {}), (['alpha.png'], 'ico', {}), (['img0.jpg'], 'jpg', dict(target_mb=0.05)),
             (['img0.jpg', 'img1.jpg'], 'pdf', {}), (['multi.pdf'], 'png', {}), (['multi.pdf'], 'pdf', dict(preset='small')), (['multi.pdf'], 'txt', {}),
             (['d.md'], 'docx', {}), (['d.md'], 'html', {}), (['d.md'], 'pdf', {}), (['t.txt'], 'pdf', {}), (['d.docx'], 'pdf', {}), (['s.csv'], 'xlsx', {}),
-            (['b.epub'], 'azw3', {}), (['b.epub'], 'docx', {}), (['x.zip'], 'extract', {}), (['x.zip'], '7z', {}), (['sub.srt'], 'vtt', {}), (['m.stl'], 'obj', {})]
+            (['b.epub'], 'azw3', {}), (['b.epub'], 'docx', {}), (['b.epub'], 'pdf', {}), (['x.zip'], 'extract', {}), (['x.zip'], '7z', {}), (['sub.srt'], 'vtt', {}), (['m.stl'], 'obj', {})]
+    def pdf_nonempty(p):
+        from pypdf import PdfReader
+        return None if len(PdfReader(files_in(p)[0]).pages) >= 1 else 'PDF 沒有頁面'
+    conv_checks = {('v.mp4', 'mp4', 'height'): video_size(h=480), ('img0.jpg', 'pdf', ''): pdf_pages(2),
+                   ('multi.pdf', 'pdf', 'preset'): pdf_pages(3), ('b.epub', 'pdf', ''): pdf_nonempty}
     for fs, t, o in conv:
         fs = [S(f) for f in fs]
         if not all(os.path.exists(f) for f in fs): log(f'SKIP {os.path.basename(fs[0])}->{t}（缺少範例檔）'); continue
-        ids = eng.submit(fs, t, dict(o, out_dir=out), merge=len(fs) > 1); wait(ids); report(f'{os.path.basename(fs[0])} → {t} {o or ""}', ids)
+        chk = conv_checks.get((os.path.basename(fs[0]), t, next(iter(o), '')))
+        ids = eng.submit(fs, t, dict(o, out_dir=out), merge=len(fs) > 1); wait(ids); report(f'{os.path.basename(fs[0])} → {t} {o or ""}', ids, chk)
 
     log('\n── 工具箱 ──')
     tl = [('v_social', ['v.mp4'], dict(mode='vertical')), ('v_social', ['v.mp4'], dict(mode='mb10')), ('v_crop', ['v.mp4'], dict(mode='1:1')),
@@ -119,11 +181,28 @@ def main(arg=None):
           ('s_photocull', ['img0.jpg', 'img1.jpg', 'img2.jpg', 'img3.jpg'], {}), ('s_autocrop', ['letterbox.mp4'], {}),
           ('s_loudness', ['song.mp3'], dict(target='podcast')), ('s_loudness', ['v.mp4'], {}), ('s_smartname', ['img0.jpg', 'doc6.pdf', 'song.mp3'], {}),
           ('s_quality', ['v.mp4'], dict(target='0.96'))]
+    # 依（工具, 參數）檢查成品內容；範例：v.mp4 是 8 秒 1280×720，talk.mp4 是 20 秒、其中約 5 秒靜音
+    tool_checks = {
+        ('v_split', "{'mode': 'every', 'sec': 3}"): count(3, '.mp4'),
+        ('v_crop', "{'mode': '1:1'}"): video_size(square=True),
+        ('v_rotate', "{'op': 'cw'}"): video_size(w=720, h=1280),
+        ('v_speed', "{'speed': 2}"): duration(3.6, 4.4),
+        ('a_ringtone', "{'len': 5}"): duration(4.8, 5.3),
+        ('i_resize', "{'val': 800}"): image_long(800),
+        ('p_split', '{}'): count(6, '.pdf'),
+        ('p_pages', "{'pages': '5,1-2'}"): pdf_pages(3),
+        ('p_encrypt', "{'pw': '1234'}"): pdf_encrypted,
+        ('s_jumpcut', '{}'): duration(13.0, 16.5),
+        ('s_highlight', "{'length': 8, 'clip': 2}"): duration(7.5, 8.6),
+        ('s_highlight', "{'length': 8, 'clip': 2, 'ratio': '9:16'}"): all_of(duration(7.5, 8.6), video_size(w=1080, h=1920)),
+        ('s_autocrop', '{}'): video_size(w=1280, h=536),
+        ('s_bestframe', "{'count': 3}"): count(3, '.jpg'),
+    }
     for tool, fs, o in tl:
         t = T.TOOL[tool]
         defaults = {f['k']: f['default'] for f in t['fields']}
         ids = eng.submit_tool(tool, [S(f) for f in fs], dict(defaults, **o, out_dir=out), t['name'], together=bool(t.get('together')), heavy=tool in T.HEAVY)
-        wait(ids); report(f"{t['name']} {o if o else ''}"[:34], ids)
+        wait(ids); report(f"{t['name']} {o if o else ''}"[:34], ids, tool_checks.get((tool, str(o))))
 
     if '--ai' in flags:
         log('\n── AI 字幕 ──')

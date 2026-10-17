@@ -36,18 +36,59 @@ def base_dir():
 def E_isurl(s): return bool(re.match(r'^[a-z]+://', s or ''))
 
 _DATA = None
+APP_DATA_NAME = 'SiWeiBaDe'
+LEGACY_DATA_NAME = 'ZhuanDangGongChang'
+# 使用者資料：設定、視窗位置、監看狀態與快取。搬到新位置時只複製（不移動、不覆蓋），舊檔留作備份。
+USER_FILES = ('settings.json', 'window.ini', 'watch_state.json', 'hw_cache.json', 'hw_cache_c.json', 'ffmpeg_caps.json', 'asr_terms.json')
+USER_DIRS = ('hardware-tests',)
+
+def _local_appdata():
+    return os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+
+def portable():
+    """免安裝版：程式資料夾裡有 portable.txt 時，設定與記錄跟著程式走（例如放在隨身碟）。"""
+    return os.path.isfile(os.path.join(base_dir(), 'portable.txt'))
+
+def legacy_data_dirs():
+    """舊版放使用者資料的位置（程式資料夾、%LOCALAPPDATA%\\ZhuanDangGongChang），用來搬移與找舊模型。"""
+    return [d for d in (base_dir(), os.path.join(_local_appdata(), LEGACY_DATA_NAME)) if os.path.isdir(d)]
+
+def _writable(d):
+    try:
+        os.makedirs(d, exist_ok=True)
+        t = os.path.join(d, '.zdgc_write_test')
+        with open(t, 'w') as fh: fh.write('1')
+        os.remove(t); return True
+    except OSError: return False
+
+def _migrate(dest):
+    for src in legacy_data_dirs():
+        if os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(dest)): continue
+        for name in USER_FILES:
+            a, b = os.path.join(src, name), os.path.join(dest, name)
+            if os.path.isfile(a) and not os.path.exists(b):
+                try: shutil.copy2(a, b)
+                except OSError: pass
+        for name in USER_DIRS:
+            a, b = os.path.join(src, name), os.path.join(dest, name)
+            if os.path.isdir(a) and not os.path.exists(b):
+                try: shutil.copytree(a, b)
+                except OSError: pass
+
 def data_dir():
-    """Where settings, logs and downloaded models go: next to the program (portable use, e.g. on a USB drive),
-    or %LOCALAPPDATA%\\ZhuanDangGongChang when that folder is read-only (e.g. copied into Program Files)."""
+    """Where settings, logs and downloaded models go.
+    SWBD_DATA_DIR（主程式與建置測試設定，兩個行程因此一定用同一個位置）→ 免安裝版（portable.txt）用程式資料夾
+    → 一般安裝用 %LOCALAPPDATA%\\SiWeiBaDe（第一次使用時從舊位置複製設定）→ 都不能寫入時才用程式資料夾或暫存。"""
     global _DATA
     if _DATA: return _DATA
-    for d in (base_dir(), os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'ZhuanDangGongChang')):
-        try:
-            os.makedirs(d, exist_ok=True)
-            t = os.path.join(d, '.zdgc_write_test')
-            with open(t, 'w') as fh: fh.write('1')
-            os.remove(t); _DATA = d; return d
-        except OSError: continue
+    env = os.environ.get('SWBD_DATA_DIR')
+    if env and _writable(env): _DATA = env; return _DATA
+    if portable() and _writable(base_dir()): _DATA = base_dir(); return _DATA
+    d = os.path.join(_local_appdata(), APP_DATA_NAME)
+    if _writable(d):
+        _migrate(d); _DATA = d; return _DATA
+    for d in (base_dir(), tempfile.gettempdir()):
+        if _writable(d): _DATA = d; return _DATA
     _DATA = tempfile.gettempdir(); return _DATA
 
 def bundled(*parts):
@@ -93,12 +134,16 @@ COMPONENTS = [
     ('WebView2 離線安裝檔', ['WebView2-offline-x64.exe'], '沒有 WebView2 的電腦開啟視窗'),
 ]
 
-def missing_components():
+# 安裝時可以不選的元件（精簡安裝）：整個沒有安裝不算缺件；裝了卻缺檔才算。建置檢查用 strict=True，全部都要有。
+OPTIONAL_COMPONENTS = {'LibreOffice', 'Calibre', 'WebView2 離線安裝檔'}
+
+def missing_components(strict=False):
     """Bundled pieces that are absent - each one silently disables features on a clean PC, so the window
     and the self test name them instead."""
     out = []
     for name, files, use in COMPONENTS:
         lost = [f for f in files if not os.path.isfile(bundled(*f.split('/')))]
+        if lost and not strict and name in OPTIONAL_COMPONENTS and len(lost) == len(files): continue   # 安裝時沒有選
         if lost: out.append(dict(name=name, use=use, files=lost))
     return out
 
@@ -142,7 +187,7 @@ def targets_for(cat, ext=''):
         return [x for x in t if x != ext]
     if cat == 'ebook':
         t = []
-        if CALIBRE: t += ['epub', 'mobi', 'azw3', 'pdf', 'docx', 'txt']
+        if CALIBRE: t += ['epub', 'mobi', 'azw3'] + (['pdf'] if SOFFICE else []) + ['docx', 'txt']   # 轉 PDF 經 LibreOffice
         elif ext in PANDOC_IN and PANDOC: t += ['docx', 'html', 'md', 'txt', 'odt']
         return [x for x in t if x != ext and (ext, x) not in REMOVED]
     if cat == 'archive': return (['extract', 'zip', '7z'] if SEVENZIP else [])
@@ -191,7 +236,7 @@ def unique_path(path, avoid=()):
     return cand
 
 def log_dir():
-    for d in (os.path.join(data_dir(), 'logs'), os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ZhuanDangGongChang', 'logs')):
+    for d in (os.path.join(data_dir(), 'logs'), os.path.join(tempfile.gettempdir(), APP_DATA_NAME, 'logs')):
         try: os.makedirs(d, exist_ok=True); return d
         except OSError: continue
     return tempfile.gettempdir()
@@ -370,10 +415,10 @@ def detect_hw():
             try:
                 r = run([FFMPEG, '-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=256x256:d=0.2', '-c:v', enc, '-f', 'null', '-'], timeout=8)
                 if r.returncode == 0: _HW.append(enc)
-            except Exception: pass
+            except Exception as ex: log(f'硬體編碼器 {enc} 偵測失敗：{ex}')
         try:
             with open(_HW_CACHE, 'w', encoding='utf-8') as fh: json.dump(dict(hw=_HW, t=time.time(), ffmpeg=os.path.getmtime(FFMPEG)), fh)
-        except Exception: pass
+        except Exception as ex: log(f'硬體偵測快取無法寫入：{ex}')
       _HW_BUSY = False
       return _HW
 
@@ -1098,6 +1143,22 @@ class Engine:
         self._office(j)
 
     def _ebook(self, j):
+        if CALIBRE and j.target == 'pdf':
+            # 電子書→PDF：Calibre 先轉 DOCX，再由 LibreOffice 輸出 PDF（Calibre 自己的 PDF 輸出需要約 200 MB 的
+            # Qt WebEngine，安裝包已不附）。與 engine.cpp 的 conv_ebook 相同。
+            if not SOFFICE: raise RuntimeError('電子書轉 PDF 需要 LibreOffice（安裝時請選「離線 Office」元件）')
+            out = self.out_path(j, j.files[0], 'pdf'); j.output = out
+            tmp = tempfile.mkdtemp(prefix='zdgc_eb_')
+            try:
+                mid = os.path.join(tmp, 'book.docx')
+                with OFFICE_SLOTS:
+                    if j.cancelled: raise InterruptedError
+                    self._proc(j, [CALIBRE, j.files[0], mid], 'Calibre')
+                    if not os.path.isfile(mid) or os.path.getsize(mid) <= 0: raise RuntimeError('Calibre 沒有產生中間檔（DOCX）')
+                    self._office_run(j, src=mid, out=out)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            j.encoder = 'Calibre＋LibreOffice'; return
         if CALIBRE:
             out = self.out_path(j, j.files[0], j.target); j.output = out
             with OFFICE_SLOTS:
@@ -1177,10 +1238,11 @@ class Engine:
             if j.cancelled: raise InterruptedError
             return self._office_run(j)
 
-    def _office_run(self, j):
-        out = self.out_path(j, j.files[0], j.target); j.output = out
+    def _office_run(self, j, src=None, out=None):
+        src = src or j.files[0]
+        out = out or self.out_path(j, j.files[0], j.target); j.output = out
         tmp = tempfile.mkdtemp(prefix='zdgc_')
-        ext = classify(j.files[0])[1]; t = j.target
+        ext = classify(src)[1]; t = j.target
         conv = t
         if t == 'pdf':
             p = PRESET[j.opt.get('preset', 'balanced')]
@@ -1193,7 +1255,7 @@ class Engine:
         try:
             for attempt in (conv, t) if conv != t else (t,):
                 j.proc = subprocess.Popen([SOFFICE, f'-env:UserInstallation={self._lo_profile()}', '--headless', '--norestore', '--nolockcheck',
-                                           '--convert-to', attempt, '--outdir', tmp, j.files[0]],
+                                           '--convert-to', attempt, '--outdir', tmp, src],
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=LOWPRI)
                 j.proc.communicate()
                 if j.cancelled: raise InterruptedError

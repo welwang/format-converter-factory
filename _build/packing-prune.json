@@ -28,5 +28,18 @@
   "tools/calibre/app/bin/swresample-5.dll",
   "tools/calibre/app/bin/swscale-8.dll",
   "tools/calibre/app/bin/Qt6Multimedia.dll",
-  "tools/calibre/app/bin/Qt6MultimediaWidgets.dll"
+  "tools/calibre/app/bin/Qt6MultimediaWidgets.dll",
+  "tools/calibre/app/bin/Qt6WebEngineCore.dll",
+  "tools/calibre/app/bin/Qt6WebEngineWidgets.dll",
+  "tools/calibre/app/bin/QtWebEngineProcess.exe",
+  "tools/calibre/app/bin/pyqt6.QtWebEngineCore.pyd",
+  "tools/calibre/app/bin/pyqt6.QtWebEngineWidgets.pyd",
+  "tools/calibre/app/resources/qtwebengine_resources.pak",
+  "tools/calibre/app/resources/qtwebengine_resources_100p.pak",
+  "tools/calibre/app/resources/qtwebengine_resources_200p.pak",
+  "tools/calibre/app/resources/icudtl.dat",
+  "tools/calibre/app/resources/v8_context_snapshot.bin",
+  "tools/calibre/app/translations/qtwebengine_locales",
+  "tools/ghostscript/doc",
+  "tools/ghostscript/examples"
 ]

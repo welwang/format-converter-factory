@@ -657,7 +657,7 @@ def model_dir():
 
 def find_model(name, min_size=0):
     """Bundled models (tools\\models, shipped with the app) first, then ones downloaded later."""
-    for d in (E.bundled('models'), model_dir()):
+    for d in [E.bundled('models'), model_dir()] + [os.path.join(x, 'models') for x in E.legacy_data_dirs()]:
         p = os.path.join(d, name)
         if os.path.isfile(p) and os.path.getsize(p) >= min_size: return p
     return None
@@ -680,7 +680,7 @@ def whisper_ok():
         except Exception: _WHISPER = False; return _WHISPER
         try:
             with open(cache, 'w', encoding='utf-8') as fh: json.dump(dict(ffmpeg=sig, whisper=_WHISPER), fh)
-        except Exception: pass
+        except Exception as ex: E.log(f'FFmpeg 能力快取無法寫入：{ex}')
     return _WHISPER
 
 _MODEL_LOCK = threading.Lock()
@@ -749,11 +749,12 @@ def ascii_model_path(path):
 def to_trad(text):
     try:
         import zhconv; return zhconv.s2twp(text)
-    except Exception:
+    except Exception as ex:
+        E.log(f'簡轉繁失敗，保留原文：{ex}')
         return text
 
 # 語音模型對專有名詞容易聽錯（例如把「四維八德」聽成「四維巴德」）。
-# 預設表之外，使用者可在程式資料夾放 asr_terms.json 自行補充：
+# 預設表之外，使用者可在資料夾（%LOCALAPPDATA%\\SiWeiBaDe，或程式資料夾）放 asr_terms.json 自行補充：
 #   [{"wrong": "四維巴德", "right": "四維八德"}, ...]
 _DEFAULT_ASR_FIXES = {'四維巴德': '四維八德'}
 _ASR_FIXES = None
@@ -763,14 +764,14 @@ def asr_fixes():
     if _ASR_FIXES is not None: return _ASR_FIXES
     terms = dict(_DEFAULT_ASR_FIXES)
     try:
-        path = os.path.join(E.base_dir(), 'asr_terms.json')
-        if os.path.isfile(path):
+        path = next((p for p in (os.path.join(E.data_dir(), 'asr_terms.json'), os.path.join(E.base_dir(), 'asr_terms.json')) if os.path.isfile(p)), '')
+        if path:
             with open(path, encoding='utf-8') as fh:
                 for item in json.load(fh):
                     wrong, right = item.get('wrong'), item.get('right')
                     if wrong and right: terms[wrong] = right
-    except Exception:
-        pass
+    except Exception as ex:
+        E.log(f'asr_terms.json 格式錯誤，只用內建校正表：{ex}')
     _ASR_FIXES = terms
     return terms
 

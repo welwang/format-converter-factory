@@ -46,7 +46,9 @@ try {
     $skipFiles = @('settings.json', 'window.ini', 'watch_state.json', 'hw_cache.json', 'hw_cache_c.json', 'ffmpeg_caps.json') | ForEach-Object { Join-Path $dist $_ }
     & robocopy $dist $folder /E /NFL /NDL /NJH /NJS /NP /XD @skipDirs /XF @skipFiles | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "整理免安裝版失敗（robocopy $LASTEXITCODE）" }
-    foreach ($n in '四維八德.exe', 'swbd-core.exe', '_internal', 'tools') {
+    # 免安裝版的標記：有 portable.txt 時設定與記錄存在程式資料夾（可放隨身碟）；安裝版則存 %LOCALAPPDATA%\SiWeiBaDe
+    Set-Content -LiteralPath (Join-Path $folder 'portable.txt') -Value '免安裝版：設定、記錄與下載的模型存在這個資料夾。刪除本檔則改存 %LOCALAPPDATA%\SiWeiBaDe。' -Encoding UTF8
+    foreach ($n in '四維八德.exe', 'swbd-core.exe', '_internal', 'tools', 'portable.txt') {
         if (-not (Test-Path -LiteralPath (Join-Path $folder $n))) { throw "免安裝版缺少 $n" }
     }
     $zipName = "四維八德_$($version)_免安裝版.zip"

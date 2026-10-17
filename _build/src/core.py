@@ -157,7 +157,7 @@ def main():
             elif ev.get('ev') == 'close': pool.submit(close)
     # the window is gone (pipe closed): stop work and save, then leave
     try: api.close()
-    except Exception: pass
+    except Exception as ex: E.log(f'結束時儲存失敗：{ex}')
     os._exit(0)
 
 

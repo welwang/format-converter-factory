@@ -3,6 +3,23 @@
 本專案的重要變更都記錄在這裡。格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，
 版本號依循 [語意化版本](https://semver.org/lang/zh-TW/)。
 
+## [未發布]
+
+### 新增
+- 安裝類型可以真的選擇：「精簡安裝」不含離線 Office、電子書轉檔與 WebView2 離線安裝檔（約省 1 GB）；沒有安裝的選用元件不再被當成「缺少元件」。缺 WebView2 時改用隨附的線上安裝程式。
+- 免安裝版放 `portable.txt` 標記，設定跟著程式資料夾走。
+
+### 變更
+- 安裝版的設定、記錄與快取改存 `%LOCALAPPDATA%\SiWeiBaDe`，與程式分開。第一次開啟時從程式資料夾與舊的 `%LOCALAPPDATA%\ZhuanDangGongChang` 複製舊設定（不移動、不覆蓋）；先前下載的語音模型照樣找得到。主程式把選定的位置傳給背景元件，兩個行程一定一致。
+- 建置中的煙霧測試與自我測試改用候選資料夾內的 `appdata`（`SWBD_DATA_DIR`），不再寫進使用者的設定與記錄。
+- 電子書轉 PDF 改為 Calibre 先轉 DOCX、再由 LibreOffice 輸出 PDF；安裝包不再附 Calibre 的 Qt WebEngine（約 200 MB），另移除 Ghostscript 的說明文件與範例。
+- 介面拆成 `index.html`、`app.css`、`app.js`。
+- 離線文字模型由 Q8_0 改為 Q4_K_M（609.8 MB → 378.3 MB）。以相同提示、相同參數實測摘要、翻譯與會議總結：摘要由「照抄原文到被截斷」變成真正的條列，翻譯的台灣用語較正確，會議筆記不再出現幻覺前綴；速度約快 2 倍。Q8 版本保留在 `_build\dl\model-Q8_0.gguf` 供比對。
+- 設定檔損毀時保留 `settings.json.broken` 並寫入記錄（以前會無聲重設）；監控資料夾、快捷鍵、簡轉繁、硬體偵測、詞彙校正檔的失敗改為寫入記錄。
+
+### 測試
+- 內建自我檢測除了「有沒有產生檔案」，也檢查成品內容：分割段數、長度、解析度、PDF 頁數、加密、去黑邊後尺寸、封面張數等；新增電子書轉 PDF。
+
 ## [1.0] - 2026-10-17
 
 第一個正式版本：完全離線的 Windows 轉檔、PDF 與電腦工具箱。所有處理都在本機執行，引擎、字型、模型與 Visual C++ 執行庫都隨程式附帶，不需要另外安裝 Python、Microsoft Office 或任何轉檔軟體。

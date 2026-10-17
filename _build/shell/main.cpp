@@ -155,24 +155,64 @@ static void fail_box(const wchar_t *msg)
     MessageBoxW(g_hwnd, msg, APP_TITLE, MB_OK | MB_ICONWARNING);
 }
 
-/* Settings, logs and models live next to the program (portable use) unless that folder is read-only,
-   e.g. under Program Files: then %LOCALAPPDATA%\ZhuanDangGongChang - the same rule as the core. */
+/* 使用者資料（設定、視窗位置、記錄、快取）的位置，規則與 Python 的 engine.data_dir() 相同：
+     1. SWBD_DATA_DIR（建置測試用；啟動背景元件前也會設成最後選定的位置，兩個行程因此一定一致）
+     2. 程式資料夾有 portable.txt（免安裝版）→ 程式資料夾
+     3. 一般安裝 → %LOCALAPPDATA%\SiWeiBaDe；第一次使用時從程式資料夾與舊的 %LOCALAPPDATA%\ZhuanDangGongChang
+        複製設定（不移動、不覆蓋）
+   都不能寫入時才退回程式資料夾。 */
+static int dir_writable(const wchar_t *dir)
+{
+    CreateDirectoryW(dir, NULL);
+    wchar_t test[MAX_PATH];
+    if (swprintf(test, MAX_PATH, L"%s\\.zdgc_write_test", dir) < 0) return 0;
+    HANDLE h = CreateFileW(test, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, NULL);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    CloseHandle(h);
+    return 1;
+}
+
+static int file_exists(const wchar_t *path)
+{
+    DWORD a = GetFileAttributesW(path);
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static void migrate_user_files(const wchar_t *from, const wchar_t *to)
+{
+    static const wchar_t *names[] = { L"settings.json", L"window.ini", L"watch_state.json", L"hw_cache.json",
+                                      L"hw_cache_c.json", L"ffmpeg_caps.json", L"asr_terms.json" };
+    if (!_wcsicmp(from, to)) return;
+    for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+        wchar_t a[MAX_PATH], b[MAX_PATH];
+        if (swprintf(a, MAX_PATH, L"%s\\%s", from, names[i]) < 0 || swprintf(b, MAX_PATH, L"%s\\%s", to, names[i]) < 0) continue;
+        if (file_exists(a) && !file_exists(b)) CopyFileW(a, b, TRUE);      /* TRUE：目的地已存在就不覆蓋 */
+    }
+}
+
 static void init_dirs(void)
 {
     GetModuleFileNameW(NULL, g_baseDir, MAX_PATH);
     PathRemoveFileSpecW(g_baseDir);
-    wchar_t test[MAX_PATH];
-    swprintf(test, MAX_PATH, L"%s\\.zdgc_write_test", g_baseDir);
-    HANDLE h = CreateFileW(test, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, NULL);
-    if (h != INVALID_HANDLE_VALUE) {
-        CloseHandle(h);
+    wchar_t env[MAX_PATH], marker[MAX_PATH], local[MAX_PATH], legacy[MAX_PATH];
+    const DWORD n = GetEnvironmentVariableW(L"SWBD_DATA_DIR", env, MAX_PATH);
+    swprintf(marker, MAX_PATH, L"%s\\portable.txt", g_baseDir);
+    if (n && n < MAX_PATH && dir_writable(env)) {
+        wcscpy(g_dataDir, env);
+    } else if (file_exists(marker) && dir_writable(g_baseDir)) {
         wcscpy(g_dataDir, g_baseDir);
     } else {
-        wchar_t local[MAX_PATH];
         if (!GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH)) wcscpy(local, g_baseDir);
-        swprintf(g_dataDir, MAX_PATH, L"%s\\ZhuanDangGongChang", local);
-        CreateDirectoryW(g_dataDir, NULL);
+        swprintf(g_dataDir, MAX_PATH, L"%s\\SiWeiBaDe", local);
+        if (dir_writable(g_dataDir)) {
+            migrate_user_files(g_baseDir, g_dataDir);
+            swprintf(legacy, MAX_PATH, L"%s\\ZhuanDangGongChang", local);
+            migrate_user_files(legacy, g_dataDir);
+        } else {
+            wcscpy(g_dataDir, g_baseDir);
+        }
     }
+    SetEnvironmentVariableW(L"SWBD_DATA_DIR", g_dataDir);   /* 背景元件（子行程）繼承，與主程式用同一個位置 */
     wchar_t logs[MAX_PATH];
     swprintf(logs, MAX_PATH, L"%s\\logs", g_dataDir);
     CreateDirectoryW(logs, NULL);
@@ -749,11 +789,18 @@ static BOOL ensure_runtime(wchar_t *fixedFolder)
     if (runtime_present(fixed)) { wcscpy(fixedFolder, fixed); return TRUE; }
     wchar_t setup[MAX_PATH];
     swprintf(setup, MAX_PATH, L"%s\\tools\\WebView2-offline-x64.exe", g_baseDir);
+    BOOL online = FALSE;                 /* 精簡安裝沒有離線安裝檔：改用隨附的線上安裝程式（需要網路） */
+    if (GetFileAttributesW(setup) == INVALID_FILE_ATTRIBUTES) {
+        swprintf(setup, MAX_PATH, L"%s\\tools\\MicrosoftEdgeWebview2Setup.exe", g_baseDir);
+        online = TRUE;
+    }
     if (GetFileAttributesW(setup) == INVALID_FILE_ATTRIBUTES) {
         fail_box(L"四維八德的視窗需要 Microsoft Edge WebView2 執行環境，這台電腦目前沒有。\n請使用包含 WebView2 的完整離線安裝程式重新安裝。");
         return FALSE;
     }
-    if (MessageBoxW(NULL, L"四維八德的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n按「確定」使用隨附的離線安裝程式安裝，完成後會自動開啟四維八德。",
+    if (MessageBoxW(NULL, online
+                        ? L"四維八德的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n按「確定」從網路下載並安裝（需要連網），完成後會自動開啟四維八德。"
+                        : L"四維八德的視窗需要 Microsoft Edge WebView2 執行環境（Windows 11 已內建），這台電腦目前沒有。\n\n按「確定」使用隨附的離線安裝程式安裝，完成後會自動開啟四維八德。",
                     APP_TITLE, MB_OKCANCEL | MB_ICONINFORMATION) != IDOK) return FALSE;
     SHELLEXECUTEINFOW se = { sizeof se };
     se.fMask = SEE_MASK_NOCLOSEPROCESS; se.lpFile = setup; se.lpParameters = L"/silent /install"; se.nShow = SW_SHOWNORMAL;

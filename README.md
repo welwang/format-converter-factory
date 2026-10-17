@@ -105,11 +105,15 @@
 
 1. 執行 `四維八德_<版本>_離線安裝程式.exe`。
 2. 選擇安裝位置與要建立的捷徑。預設裝在 `%LOCALAPPDATA%\Programs\SiWeiBaDe`，**不需要系統管理員權限**。
-3. 可選的附加項目：
+3. 選擇安裝類型：
+   - **完整安裝（建議）**：全部功能。
+   - **精簡安裝**：不含離線 Office（LibreOffice）、電子書轉檔（Calibre）與 WebView2 離線安裝檔，約省 1 GB 磁碟空間。Office／試算表／簡報轉檔、Office→PDF、電子書轉檔不會出現在格式選單；缺 WebView2 的電腦改從網路安裝。之後要用再以「自行選擇」重新安裝加入即可。
+   - **自行選擇**：逐項勾選。
+4. 可選的附加項目：
    - 建立桌面捷徑
    - 加入檔案總管右鍵「傳送到 → 四維八德」
    - 在檔案與資料夾的右鍵選單加入「用四維八德開啟」
-4. 安裝完成後開啟四維八德。
+5. 安裝完成後開啟四維八德。
 
 安裝程式以 LZMA2 壓縮，解壓字典 64 MB，避免低記憶體電腦安裝失敗。
 
@@ -118,11 +122,11 @@
 1. 解壓縮 `四維八德_<版本>_免安裝版.zip` 到任意位置（例如隨身碟）。
 2. 執行資料夾裡的 `四維八德.exe`。
 
-設定與記錄檔會存在同一個資料夾裡，整個資料夾可以直接複製到另一台 Windows 10／11 電腦使用。資料夾沒有寫入權限時（例如放在 `C:\Program Files`），會改存到 `%LOCALAPPDATA%\ZhuanDangGongChang`。
+免安裝版資料夾裡有 `portable.txt`，設定與記錄檔會存在同一個資料夾裡，整個資料夾可以直接複製到另一台 Windows 10／11 電腦使用。刪除 `portable.txt` 則改存到 `%LOCALAPPDATA%\SiWeiBaDe`。
 
 ### 解除安裝
 
-- **安裝版**：Windows「設定 → 應用程式 → 已安裝的應用程式 → 四維八德 → 解除安裝」。設定檔、快取與健康檢查報告會一併移除；你轉出來的成品不會被刪除。
+- **安裝版**：Windows「設定 → 應用程式 → 已安裝的應用程式 → 四維八德 → 解除安裝」。你轉出來的成品不會被刪除；設定、記錄與健康檢查報告保留在 `%LOCALAPPDATA%\SiWeiBaDe`（重新安裝會沿用），不需要時可以直接刪除該資料夾。
 - **免安裝版**：直接刪除資料夾。
 
 ## 快速開始
@@ -385,7 +389,9 @@ PDF 功能全部自行實作，使用本機開源引擎，不呼叫 iLovePDF 或
 
 ## 設定與資料位置
 
-程式資料夾可以寫入時，資料就存在程式資料夾（免安裝版）；否則存在 `%LOCALAPPDATA%\ZhuanDangGongChang`。
+- **安裝版**：`%LOCALAPPDATA%\SiWeiBaDe`。設定與程式分開存放，更新或重新安裝不會動到設定。從舊版（資料存在程式資料夾或 `%LOCALAPPDATA%\ZhuanDangGongChang`）升級時，第一次開啟會自動**複製**舊設定過來，舊檔原封不動保留。
+- **免安裝版**：程式資料夾（有 `portable.txt` 時）。
+- 設定環境變數 `SWBD_DATA_DIR` 可以指定其他位置（建置測試用這個方式，不會碰到使用者的設定）。
 
 | 檔案或資料夾 | 內容 |
 | --- | --- |
@@ -394,6 +400,7 @@ PDF 功能全部自行實作，使用本機開源引擎，不呼叫 iLovePDF 或
 | `watch_state.json` | 監控資料夾已處理過的檔案 |
 | `hw_cache.json`、`hw_cache_c.json` | 硬體編碼器偵測結果 |
 | `ffmpeg_caps.json` | FFmpeg 濾鏡能力快取 |
+| `asr_terms.json` | （選用）語音辨識詞彙校正，例如 `[{"wrong": "四維巴德", "right": "四維八德"}]` |
 | `logs\` | 執行記錄（`zdgc.log`、`core.log`、`shell.log`） |
 | `hardware-tests\` | 硬體短測與電腦健康檢查的報告（txt＋json） |
 
@@ -402,13 +409,13 @@ PDF 功能全部自行實作，使用本機開源引擎，不呼叫 iLovePDF 或
 <details>
 <summary><b>開啟時提示缺少 WebView2</b></summary>
 
-依提示安裝即可。安裝包與免安裝版的 `tools\WebView2-offline-x64.exe` 是 Microsoft 的離線安裝檔，沒有網路也能安裝。
+依提示安裝即可。完整安裝與免安裝版的 `tools\WebView2-offline-x64.exe` 是 Microsoft 的離線安裝檔，沒有網路也能安裝；精簡安裝改用 `tools\MicrosoftEdgeWebview2Setup.exe` 從網路安裝。
 </details>
 
 <details>
 <summary><b>啟動時說缺少某個元件</b></summary>
 
-`tools` 資料夾不完整（例如只複製了部分檔案）。請重新安裝，或重新解壓縮完整的免安裝版。
+`tools` 資料夾不完整（例如只複製了部分檔案）。請重新安裝，或重新解壓縮完整的免安裝版。精簡安裝沒有選的 Office、電子書與 WebView2 離線安裝檔不算缺少，不會出現這個提示。
 </details>
 
 <details>

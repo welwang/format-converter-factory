@@ -27,8 +27,12 @@ function Invoke-Native([scriptblock]$Command) {
 }
 
 Push-Location $buildRoot
+$previousDataDir = $env:SWBD_DATA_DIR
 try {
     $env:PYTHONPATH = Join-Path $buildRoot 'vendor'
+    # 建置中的煙霧測試與自我測試一律把設定、記錄寫進這次的候選資料夾，不碰使用者真正的 %LOCALAPPDATA%\SiWeiBaDe
+    $env:SWBD_DATA_DIR = Join-Path $stage 'appdata'
+    New-Item -ItemType Directory -Path $env:SWBD_DATA_DIR -Force | Out-Null
     if ((Invoke-Native { & $python -m PyInstaller --clean --noconfirm ZDGC.spec --distpath (Join-Path $stage 'dist') --workpath (Join-Path $stage 'work') }) -ne 0) { throw '背景元件建置失敗，現有程式未修改。' }
     & (Join-Path $buildRoot 'shell\build_shell.ps1') -OutFile (Join-Path $candidate '四維八德.exe')
     if ($LASTEXITCODE -ne 0) { throw 'C++ 主程式建置失敗，現有程式未修改。' }
@@ -55,7 +59,7 @@ try {
     foreach ($f in 'README.md','CHANGELOG.md','授權說明.md','使用授權條款.md','LICENSE','COPYING.AGPL-3.0','開源與散布說明.md') {
         Copy-Item -LiteralPath (Join-Path $projectRoot $f) -Destination $srcApp -Force
     }
-    if ((Invoke-Native { & $python -c "import sys;sys.path.insert(0,sys.argv[1]);import engine as E;E.base_dir=lambda:sys.argv[2];m=E.missing_components();print(m);sys.exit(bool(m))" (Join-Path $buildRoot 'src') $candidate }) -ne 0) { throw '缺少完整離線元件，停止打包。' }
+    if ((Invoke-Native { & $python -c "import sys;sys.path.insert(0,sys.argv[1]);import engine as E;E.base_dir=lambda:sys.argv[2];m=E.missing_components(strict=True);print(m);sys.exit(bool(m))" (Join-Path $buildRoot 'src') $candidate }) -ne 0) { throw '缺少完整離線元件，停止打包。' }
     $heic = Join-Path $buildRoot 'samples\i.heic'
     if (Test-Path -LiteralPath $heic) {
         $sampleDir = Join-Path $candidate '_build\samples'
@@ -107,7 +111,7 @@ try {
         Write-Host "已建立校驗清單：$(Join-Path $outDir 'SHA256SUMS.txt')"
     }
     Write-Host "候選版本與測試保存在：$stage。現有程式未替換；通過測試後可另行部署，公開散布另需完成第三方來源審核。"
-} finally { Pop-Location }
+} finally { Pop-Location; $env:SWBD_DATA_DIR = $previousDataDir }
 # ── 開源發布合規檢查（每次建置都跑；fail-closed）────────────────────────────
 # 閘門未通過時：候選版與安裝程式旁會放 COMPLIANCE-BLOCKED.txt，且本腳本以離開碼 2 結束，
 # 任何依離開碼判斷的發布流程都會停下。成品仍保留在 release-stage 供自己測試（重新建置安裝包到桌面.ps1 會提示「僅供測試」）。

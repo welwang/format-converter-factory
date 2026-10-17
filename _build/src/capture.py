@@ -140,7 +140,7 @@ def hotkey_loop(callback, vk=0x78, mods=0x0002 | 0x0004):
     while u.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
         if msg.message == 0x0312:
             try: callback()
-            except Exception: pass
+            except Exception as ex: E.log(f'快捷鍵動作失敗：{ex}')
 
 # ====================================================================== downloader (yt-dlp)
 def ytdlp():
@@ -314,12 +314,12 @@ class Watcher:
                 if len(self.sizes) > 20000: self.sizes.clear()   # 只是檔案大小快取，重算即可
                 with open(self.state_file + '.tmp', 'w', encoding='utf-8') as fh: json.dump(self.seen, fh, ensure_ascii=False)
                 os.replace(self.state_file + '.tmp', self.state_file)
-        except Exception: pass
+        except Exception as ex: E.log(f'監控資料夾狀態無法儲存：{ex}')
 
     def _loop(self):
         while not self.stop_event.wait(4):
             try: self._tick()
-            except Exception: pass
+            except Exception as ex: E.log(f'監控資料夾檢查失敗：{type(ex).__name__}: {ex}')
 
     def _tick(self):
         with self.lock: rules = list(self.rules)

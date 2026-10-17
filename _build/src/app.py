@@ -1,4 +1,4 @@
-import os, sys, json, threading, base64, subprocess, copy, uuid
+import os, sys, json, threading, base64, subprocess, copy, uuid, shutil
 # The window belongs to the C program (四維八德.exe); this module is the engine's API behind it.
 OPEN_DIALOG, FOLDER_DIALOG, SAVE_DIALOG = 'open', 'folder', 'save'
 import engine as E
@@ -22,8 +22,14 @@ def res(p):
 class Api:
     def __init__(self):
         self._s = copy.deepcopy(DEFAULTS); self._settings_lock = threading.RLock()
-        try: self._s.update(json.load(open(SETTINGS, encoding='utf-8-sig')))
-        except Exception: pass
+        try:
+            with open(SETTINGS, encoding='utf-8-sig') as fh: self._s.update(json.load(fh))
+        except FileNotFoundError: pass
+        except Exception as ex:
+            # 設定檔損毀：保留一份給使用者查看，改用預設值（以前會無聲重設，使用者不知道設定為何不見）
+            E.log(f'settings.json 無法讀取，已改用預設設定：{ex}')
+            try: shutil.copy2(SETTINGS, SETTINGS + '.broken')
+            except OSError: pass
         self._s = W.clean_settings(self._s)
         self._eng = E.Engine(int(self._s.get('workers') or 0) or E.auto_workers())
         self._win = None

@@ -2,7 +2,10 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('src/ui', 'ui'), ('src/zhdict', 'zhdict')]
+datas = [('src/ui', 'ui'), ('src/zhdict', 'zhdict'),
+         # 授權證據：與 pdfium.dll 放在同一個目錄，供合規稽核取證。
+         # 檔案不存在時 PyInstaller 會直接報錯，不會靜默跳過。
+         ('licenses/LICENSE-pdfium.txt', 'pypdfium2_raw')]
 binaries = []
 hiddenimports = ['app', 'tools', 'capture', 'workflows', 'validation', 'system_tools', 'health_check', 'zhconv', 'selftest', 'cryptography', 'pdf_schema', 'pdf_tools', 'pdf_local_engines', 'file_actions', 'pdf_selftest', 'smart_tools']
 tmp_ret = collect_all('cryptography')

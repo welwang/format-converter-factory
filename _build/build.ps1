@@ -96,12 +96,6 @@ try {
         $stale = Join-Path $candidate $name
         if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Force }
     }
-    # 授權證據：PyInstaller 收進來的 pdfium.dll 旁邊放一份 PDFium 的 BSD 授權，供合規稽核查證。
-    $pdfiumDir = Join-Path $candidate '_internal\pypdfium2_raw'
-    $pdfiumLicense = Join-Path $buildRoot 'licenses\PDFium-BSD-3-Clause.txt'
-    if ((Test-Path -LiteralPath $pdfiumDir) -and (Test-Path -LiteralPath $pdfiumLicense)) {
-        Copy-Item -LiteralPath $pdfiumLicense -Destination $pdfiumDir -Force
-    }
     if (-not $SkipPackages) {
         if ((Invoke-Native { & (Join-Path $buildRoot 'inno\ISCC.exe') ("/DReleaseRoot="+$candidate) (Join-Path $buildRoot 'setup.iss') }) -ne 0) { throw '安裝程式建置失敗。' }
         # 校驗清單（sha256sum 格式「雜湊 *檔名」）：發布頁與使用者可用 certutil -hashfile 或 Get-FileHash 核對

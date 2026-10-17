@@ -276,6 +276,16 @@ def hdr_filters(path):
     return ['zscale=t=linear:npl=100', 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0',
             'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p']
 
+MAX_RENDER_SIDE = 12000.0; MAX_RENDER_PIXELS = 80000000.0
+def render_scale(size_pt, dpi):
+    """dpi/72, shrunk only for absurd page boxes (same limits as the C++ PDFium layer) so a crafted MediaBox
+    cannot ask for a multi-GB bitmap; normal pages (A0 at 200 dpi ≈ 6600×9400) are unchanged."""
+    scale = dpi / 72.0; w, h = size_pt[0] * scale, size_pt[1] * scale
+    side, area = max(w, h), w * h
+    if side > MAX_RENDER_SIDE or area > MAX_RENDER_PIXELS:
+        scale *= min(MAX_RENDER_SIDE / side, (MAX_RENDER_PIXELS / area) ** 0.5)
+    return scale
+
 def probe(path):
     i = probe_info(path); return i['dur'], i['streams']
 
@@ -585,6 +595,8 @@ class Engine:
             ext = classify(j.files[0])[1]
             if j.tool == 'hardware_test':
                 import system_tools; system_tools.run_tests(self, j)
+            elif j.tool == 'health_check':
+                import health_check; health_check.run(self, j)
             elif j.tool == 'workflow':
                 import workflows; workflows.run(self, j)
             elif j.cat == 'tool':
@@ -610,11 +622,11 @@ class Engine:
                 self._model(j)
             else: raise RuntimeError('無法辨識來源檔案類型')
             if j.cancelled: raise InterruptedError
-            if j.tool not in ('workflow', 'hardware_test'): self.validate(j)   # the hardware test writes its own result summary
+            if j.tool not in ('workflow', 'hardware_test', 'health_check'): self.validate(j)   # the hardware checks write their own result summary
             j.state = 'partial' if j.warnings else 'done'; j.progress = 1.0; j.msg = '部分完成：' + '；'.join(j.warnings)[:240] if j.warnings else '完成'; j.eta = 0
         except InterruptedError:
             j.state = 'cancelled'; j.msg = '已取消'
-            if j.output and os.path.exists(j.output):
+            if j.output and os.path.isfile(j.output) and not getattr(j, 'keep_output', False):   # reports the job promised to keep stay
                 try: os.remove(j.output)
                 except Exception: pass
         except Exception as e:
@@ -655,7 +667,7 @@ class Engine:
         if not old or old.state not in ('error', 'cancelled', 'done', 'partial'): return None
         j = Job(old.files, old.target, old.opt, old.merge, tool=old.tool, label=old.label)
         if old.tool == 'dl': return 'dl'
-        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in ('workflow', 'hardware_test') or j.tool in __import__('tools').HEAVY)
+        heavy = (j.cat in ('video', 'audio') and j.target != 'srt') if not j.tool else (j.tool in ('workflow', 'hardware_test', 'health_check') or j.tool in __import__('tools').HEAVY)
         with self.lock:
             self.jobs[j.id] = j; self.order.append(j.id)
             if old.state != 'done': self.order.remove(jid)
@@ -1024,7 +1036,7 @@ class Engine:
                         if j.cancelled: raise InterruptedError
                         with PDFIUM_LOCK:
                             page = pdf[i]
-                            bitmap = page.render(scale=dpi / 72)
+                            bitmap = page.render(scale=render_scale(page.get_size(), dpi))
                             img = bitmap.to_pil().copy()          # own the pixels before PDFium frees its buffer
                             bitmap.close(); page.close()
                         pending.append(ex.submit(save, img, os.path.join(folder, f'{i+1:03d}.{t}')))

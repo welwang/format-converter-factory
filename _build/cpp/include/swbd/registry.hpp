@@ -32,7 +32,7 @@ struct Context {
     std::string temp_dir;   /* Python tempfile.gettempdir() 的等價結果（無尾端斜線） */
 
     /* 由外殼注入：Python 引擎是否仍有未完成的工作（等同 app.py 的 self._eng.busy()）。
-       有些方法（例如磁碟操作）在忙碌時必須拒絕，而忙碌的定義住在 Python 那一側，
+       有些方法（例如暫存清理）在忙碌時必須拒絕，而忙碌的定義住在 Python 那一側，
        所以用注入而不是讓 C++ 自己猜。沒有注入時 busy() 一律回 false。 */
     std::function<bool()> python_busy;
 

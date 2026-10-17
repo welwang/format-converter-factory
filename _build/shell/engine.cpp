@@ -14,6 +14,8 @@
 #include <time.h>
 
 #ifdef _WIN32
+#include <exception>
+#include <new>
 #include "swbd/pdfium.hpp"   /* 原生 PDF 渲染層（PDFium）；非 Windows 由 Python 端負責 */
 #include "swbd/qpdf.hpp"     /* 原生 PDF 重寫層（qpdf）：重新壓縮串流、產生物件串流 */
 #endif
@@ -160,6 +162,11 @@ struct engine {
 };
 
 static engine *G;   /* for the worker threads */
+
+/* PDFium 鎖：記住這個執行緒是否持有，例外中止工作時 run_job 才能釋放，不會讓之後的 PDF 工作全部卡住。 */
+static thread_local int t_pdf_locked = 0;
+static void pdf_lock_acquire(engine *e) { mutex_lock(e->pdf_lock); t_pdf_locked = 1; }
+static void pdf_lock_release(engine *e) { t_pdf_locked = 0; mutex_unlock(e->pdf_lock); }
 
 static const char *ostr(const jval *o, const char *k, const char *d) { const char *s = jget_str(o, k, d); return s ? s : d; }
 static double onum(const jval *o, const char *k) { return jget_num(o, k, 0); }
@@ -1018,12 +1025,12 @@ static int check_file(engine *e, job *j, const char *path, const jval *opt, char
         /* 與 validation.check 相同：可讀取時報「PDF 可讀取 · N 頁」，加密文件報另一個字串。 */
           std::string pdf_error;
           int encrypted = 0;
-          mutex_lock(e->pdf_lock);
+          pdf_lock_acquire(e);
           swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
           const int pdf_pages = pdfium.load(e->base)
           ? swbd::pdf::open_document_info(pdfium, path, "", &encrypted, pdf_error)
           : -1;
-          mutex_unlock(e->pdf_lock);
+          pdf_lock_release(e);
         if (pdf_pages <= 0) { fail(j, pdf_error.empty() ? "PDF 沒有頁面" : pdf_error.c_str()); return 0; }
         if (encrypted) snprintf(detail, dn, "加密 PDF 結構可讀取");
         else snprintf(detail, dn, "PDF 可讀取 · %d 頁", pdf_pages);
@@ -1096,9 +1103,9 @@ static int check_space(job *j)
 static void conv_pdf_pages(engine *e, job *j)
 {
     swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     const int ready = pdfium.load(e->base);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (!ready) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
 
     const char *preset = ostr(j->opt, "preset", "balanced");
@@ -1117,12 +1124,12 @@ static void conv_pdf_pages(engine *e, job *j)
     int encoders = light_workers();
     if (encoders > 4) encoders = 4;
     if (encoders < 1) encoders = 1;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     swbd::pdf::RenderAll result = swbd::pdf::render_all_pages(
         pdfium, j->files[0], dpi, folder, j->target,
         [e, j](int done, int total) { (void)e; j->progress = total ? (double)done / (double)total : 1.0; return !j->cancelled; },
         encoders);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
 
     if (result.cancelled) { j->cancelled = 1; return; }
     if (!result.ok) { fail(j, result.error.empty() ? "PDF 渲染失敗" : result.error.c_str()); return; }
@@ -1151,14 +1158,14 @@ static void conv_pdf_rewrite(engine *e, job *j)
         std::vector<std::string> inputs;
         inputs.reserve(static_cast<size_t>(j->nfiles));
         for (int i = 0; i < j->nfiles; i++) inputs.push_back(j->files[i]);
-        mutex_lock(e->pdf_lock);          /* PDFium 不是執行緒安全的 */
+        pdf_lock_acquire(e);          /* PDFium 不是執行緒安全的 */
         swbd::pdf::MergeResult merged_result = swbd::pdf::merge_documents(
             pdfium, inputs, merged,
             [j](int done, int total) {
                 j->progress = total ? 0.3 + 0.6 * (double)done / (double)total : 0.3;
                 return !j->cancelled;
             });
-        mutex_unlock(e->pdf_lock);
+        pdf_lock_release(e);
         if (merged_result.cancelled) { j->cancelled = 1; return; }
         if (!merged_result.ok) {
             fail(j, merged_result.error.empty() ? "PDF 合併失敗" : merged_result.error.c_str());
@@ -1277,7 +1284,7 @@ static void tool_pdf_repair(engine *e, job *j)
     j->progress = 0.1;
     if (qpdf.rewrite_file(j->files[0], dest, error, true)) {
         /* 逐頁驗證：真的畫一次（0.2 倍）才算這一頁讀得出來。 */
-        mutex_lock(e->pdf_lock);
+        pdf_lock_acquire(e);
         const int pages = swbd::pdf::open_page_count(pdfium, dest, password, error);
         if (pages > 0) {
             swbd::pdf::FPDF_DOCUMENT doc = pdfium.LoadDocument(dest, password[0] ? password : nullptr);
@@ -1305,20 +1312,20 @@ static void tool_pdf_repair(engine *e, job *j)
                 pdfium.CloseDocument(doc);
             }
         }
-        mutex_unlock(e->pdf_lock);
+        pdf_lock_release(e);
     }
     if (recovered <= 0) {
         /* 第二條路徑：PDFium 逐頁重建。 */
         unreadable.clear();
         std::vector<unsigned char> rebuilt;
-        mutex_lock(e->pdf_lock);
+        pdf_lock_acquire(e);
         const int got = swbd::pdf::rebuild_readable_pages(
             pdfium, j->files[0], password, rebuilt, unreadable,
             [j](int done, int total) {
                 j->progress = total ? 0.85 * (double)done / (double)total : 0;
                 return !j->cancelled;
             });
-        mutex_unlock(e->pdf_lock);
+        pdf_lock_release(e);
         if (j->cancelled) return;
         if (got <= 0) { fail(j, "無法恢復可讀取的頁面；原檔保持不變"); return; }
         if (!write_file(dest, (const char *)rebuilt.data(), rebuilt.size())) { fail(j, "無法寫出修復後的 PDF"); return; }
@@ -1360,9 +1367,9 @@ static void tool_pdf_images(engine *e, job *j)
     if (!pdfium.load(e->base)) { fail(j, "找不到原生 PDF 引擎（_internal\\pypdfium2_raw\\pdfium.dll）"); return; }
     const char *password = ostr(j->opt, "pw", "");
     std::string error;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     const int count = swbd::pdf::open_page_count(pdfium, j->files[0], password, error);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (count <= 0) { fail(j, error.c_str()); return; }
 
     std::vector<int> selected;
@@ -1376,7 +1383,7 @@ static void tool_pdf_images(engine *e, job *j)
     j->keep_output = 1;
 
     swbd::pdf::RenderAll made;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     made = swbd::pdf::render_pages(
         pdfium, j->files[0], password, selected, want,
         [want](int, double w, double h) {
@@ -1396,7 +1403,7 @@ static void tool_pdf_images(engine *e, job *j)
             return !j->cancelled;
         },
         4);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (made.cancelled) { j->cancelled = 1; return; }
     if (!made.ok) { fail(j, made.error.empty() ? "PDF 渲染失敗" : made.error.c_str()); return; }
     if (made.rendered <= 0) { fail(j, "文件沒有可提取的圖片"); return; }
@@ -1413,9 +1420,9 @@ static void tool_pdf_flatten(engine *e, job *j)
     const char *password = ostr(j->opt, "pw", "");
     j->progress = 0.2;
     std::vector<unsigned char> bytes;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     swbd::pdf::MergeResult made = swbd::pdf::flatten_document(pdfium, j->files[0], password, bytes);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (!made.ok) { fail(j, made.error.empty() ? "PDF 壓平失敗" : made.error.c_str()); return; }
     if (j->cancelled) return;
     j->progress = 0.8;
@@ -1427,9 +1434,9 @@ static void tool_pdf_flatten(engine *e, job *j)
     }
     j->output = out;
     std::string error;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     const int written = swbd::pdf::open_page_count(pdfium, out, "", error);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (written != made.pages) {
         fail(j, written <= 0 ? "輸出 PDF 沒有頁面" : "輸出 PDF 的頁數不正確");
         return;
@@ -1516,7 +1523,7 @@ static void tool_pdf_copy(engine *e, job *j)
     j->progress = 1;
 }
 /* p_merge：按清單順序合併（pdf_tools.arrange 的合併分支），輸出檔名沿用 tool_out_path 的規則。
-   Python 對每個來源都用同一組選項（含 pw），所以密碼也一併傳進 PDFium。 */
+   Python 對每個來源都用同一組選項（含 pw），所以密碼也一併傳進 PDFium（merge_documents 用它開啟每個來源）。 */
 static void tool_pdf_merge(engine *e, job *j)
 {
     swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
@@ -1531,14 +1538,14 @@ static void tool_pdf_merge(engine *e, job *j)
     j->progress = 0.05;
 
     std::vector<unsigned char> bytes;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     swbd::pdf::MergeResult made = swbd::pdf::merge_documents(
         pdfium, inputs, password, bytes,
         [j](int done, int total) {
             j->progress = total ? 0.85 * (double)done / (double)total : 0.05;
             return !j->cancelled;
         });
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (made.cancelled) { j->cancelled = 1; return; }
     if (!made.ok) { fail(j, made.error.empty() ? "PDF 合併失敗" : made.error.c_str()); return; }
     if (j->cancelled) return;
@@ -1556,9 +1563,9 @@ static void tool_pdf_merge(engine *e, job *j)
         return;
     }
     j->output = out;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     const int written = swbd::pdf::open_page_count(pdfium, out, "", error);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (written != made.pages) {
         fail(j, written <= 0 ? "輸出 PDF 沒有頁面" : "輸出 PDF 的頁數不正確");
         return;
@@ -1573,11 +1580,11 @@ static void tool_pdf_finish(engine *e, job *j, const std::vector<int> &keep, con
     swbd::pdf::Pdfium &pdfium = swbd::pdf::Pdfium::instance();
     swbd::pdf::Qpdf &qpdf = swbd::pdf::Qpdf::instance();
     std::vector<unsigned char> bytes;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     swbd::pdf::MergeResult made = blanks
         ? swbd::pdf::assemble_with_blanks(pdfium, j->files[0], password, keep, bytes)
         : swbd::pdf::select_pages(pdfium, j->files[0], password, keep, bytes);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (!made.ok) { fail(j, made.error.empty() ? "PDF 頁面操作失敗" : made.error.c_str()); return; }
     if (j->cancelled) return;
     j->progress = 0.7;
@@ -1597,9 +1604,9 @@ static void tool_pdf_finish(engine *e, job *j, const std::vector<int> &keep, con
     j->output = out;
 
     /* 與 Python save() 相同的自我檢查：輸出必須開得起來、而且頁數正確。 */
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     const int written = swbd::pdf::open_page_count(pdfium, out, "", error);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (written != made.pages) {
         fail(j, written <= 0 ? "輸出 PDF 沒有頁面" : "輸出 PDF 的頁數不正確");
         return;
@@ -1619,9 +1626,9 @@ static void tool_pdf_arrange(engine *e, job *j)
 
     const char *password = ostr(j->opt, "pw", "");
     std::string error;
-    mutex_lock(e->pdf_lock);
+    pdf_lock_acquire(e);
     const int count = swbd::pdf::open_page_count(pdfium, j->files[0], password, error);
-    mutex_unlock(e->pdf_lock);
+    pdf_lock_release(e);
     if (count <= 0) { fail(j, error.c_str()); return; }
     j->progress = 0.2;
 
@@ -1669,9 +1676,23 @@ static void run_tool_job(engine *e, job *j)
     fail(j, "這個工具還沒有原生實作");
 }
 
+static void dispatch_job(engine *e, job *j);
+static void finish_job(engine *e, job *j);
+
 static void run_job(engine *e, job *j)
 {
     j->state = Q_RUNNING; j->started = now_s(); j->msg[0] = 0;
+    /* C++ 層（PDFium／qpdf 接口、std::vector）可能擲出例外；在工作執行緒裡沒接住會直接 std::terminate 整個程式。 */
+    try { dispatch_job(e, j); }
+    catch (const std::bad_alloc &) { fail(j, "記憶體不足，無法處理這個檔案（頁面或影像過大）"); }
+    catch (const std::exception &ex) { char m[200]; snprintf(m, sizeof m, "處理失敗：%s", ex.what()); fail(j, m); }
+    catch (...) { fail(j, "處理失敗：未預期的錯誤"); }
+    if (t_pdf_locked) pdf_lock_release(e);
+    finish_job(e, j);
+}
+
+static void dispatch_job(engine *e, job *j)
+{
     char ext[32]; ext_of(j->files[0], ext, sizeof ext);
     const char *why = unsupported_why(ext);
     if (j->tool[0]) run_tool_job(e, j);          /* 原生工具工作（工具箱由 C++ 接手的那幾個） */
@@ -1688,10 +1709,13 @@ static void run_job(engine *e, job *j)
     else if (!strcmp(j->cat, "pdf") && !strcmp(j->target, "pdf")) conv_pdf_rewrite(e, j);
 #endif
     else fail(j, "無法辨識來源檔案類型");
+}
 
+static void finish_job(engine *e, job *j)
+{
     if (j->cancelled) {
         j->state = Q_CANCELLED; snprintf(j->msg, sizeof j->msg, "已取消");
-        if (j->output && is_file(j->output)) remove_file(j->output);
+        if (j->output && is_file(j->output) && !j->keep_output) remove_file(j->output);
     } else if (j->state == Q_RUNNING && validate(e, j)) {
         j->state = Q_DONE; j->progress = 1; snprintf(j->msg, sizeof j->msg, "完成"); j->eta = 0; j->has_eta = 1;
     }

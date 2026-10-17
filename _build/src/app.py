@@ -6,11 +6,10 @@ import tools as T
 import capture as C
 import workflows as W
 import system_tools as ST
-import disk_tools as DT
 import file_actions as FA
 
 SETTINGS = os.path.join(E.data_dir(), 'settings.json')
-VERSION = '2.3.3'
+VERSION = '2.3.4'
 EDITION = '開源版'
 TITLE = f'四維八德（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,
@@ -44,25 +43,31 @@ class Api:
 
     def system_info(self): return dict(hardware=ST.hardware_info(), cleanup=ST.CLEANUP)
 
-    def disk_info(self): return DT.inventory()
-
-    def disk_preview(self, mode, source, destination, group, recovery_mode):
-        if self._eng.busy(): raise ValueError('請先完成目前工作，避免同時存取要檢查或修復的磁碟')
-        self._disk_plan = DT.plan(mode, source, destination, group, recovery_mode)
-        return {k:v for k,v in self._disk_plan.items() if k!='command'}
-
-    def disk_launch(self, token, confirmed):
-        if self._eng.busy(): raise ValueError('請先完成目前工作')
-        if not getattr(self, '_disk_plan', None): raise ValueError('請先預覽磁碟操作')
-        result=DT.launch(self._disk_plan, token, confirmed);self._disk_plan=None
-        return result
-
-    def disk_help(self, kind):
-        import webbrowser
-        webbrowser.open(DT.HELP.get(kind,DT.HELP['check']));return True
-
     def system_test(self):
         return self._eng.submit_tool('hardware_test', ['電腦硬體'], dict(resource_mode='quiet', out_dir=os.path.join(E.data_dir(), 'hardware-tests')), '電腦硬體短測', heavy=True)
+
+    def health_check(self, opts=None):
+        """電腦健康檢查：需要整台電腦的資源，所以只在沒有其他工作時開始。"""
+        if self._eng.busy(): raise ValueError('請先完成或停止進行中的工作，再開始健康檢查，結果才準確')
+        import health_check as HC
+        o = HC.options(opts); o.update(resource_mode='quiet', out_dir=os.path.join(E.data_dir(), 'hardware-tests'))
+        return self._eng.submit_tool('health_check', ['電腦健康檢查'], o, '電腦健康檢查（' + o['name'] + '）', heavy=True)
+
+    def health_report(self, path):
+        """The JSON written next to a health-check text report (only inside the hardware-tests folder)."""
+        folder = os.path.realpath(os.path.join(E.data_dir(), 'hardware-tests'))
+        p = os.path.realpath(os.path.splitext(str(path or ''))[0] + '.json')
+        if os.path.dirname(p) != folder or not os.path.basename(p).startswith('電腦健康檢查_'): raise ValueError('不是健康檢查報告')
+        with open(p, encoding='utf-8') as fh: return json.load(fh)
+
+    def memory_diagnostic(self):
+        """Windows 記憶體診斷（mdsched.exe）：Windows 會自己詢問要立即重新開機或下次開機時檢查。"""
+        if os.name != 'nt': raise RuntimeError('只有 Windows 提供記憶體診斷')
+        import ctypes
+        exe = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'System32', 'mdsched.exe')
+        r = ctypes.windll.shell32.ShellExecuteW(None, 'open', exe, None, None, 1)
+        if r <= 32: raise RuntimeError('沒有開啟記憶體診斷（可能取消了系統管理員權限要求）')
+        return True
 
     def cleanup_scan(self, categories):
         if self._eng.busy(): raise ValueError('請先完成或停止進行中的工作，再掃描清理')
@@ -115,6 +120,15 @@ class Api:
 
     # ---------- tools
     def tools_schema(self): return T.schema()
+
+    # ---------- 智慧建議／白話指令（smart_tools.py）
+    def smart_suggest(self, paths):
+        """一般轉檔清單：依實際內容（編碼、HDR、透明度、掃描 PDF…）建議格式並說明原因。"""
+        return T.SMART.smart_suggest(paths)
+
+    def smart_intent(self, text):
+        """工具搜尋列的白話指令，例如「把影片壓到 25MB」「會議錄音整理重點」。"""
+        return T.SMART.intent(text)
 
     def pdf_preview(self,path,page=1,pw=''):
         import pdf_tools
@@ -253,7 +267,7 @@ class Api:
     def open_file(self, path):
         return FA.open_file(path)
     def open_doc(self, name):
-        document = {'license': '授權說明.md', 'guide': '使用說明.md', 'eula': '使用授權條款.md', 'tests': '測試報告.html'}.get(name)
+        document = {'license': '授權說明.md', 'guide': 'README.md', 'eula': '使用授權條款.md', 'changes': 'CHANGELOG.md'}.get(name)
         if not document: raise ValueError('不支援的說明文件')
         return FA.open_file(os.path.join(E.base_dir(), document))
     def open_log(self):

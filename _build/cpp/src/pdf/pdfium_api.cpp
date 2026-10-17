@@ -1,6 +1,10 @@
 ﻿/* 原生 PDF 層：PDFium 動態載入、基本查詢與頁面渲染。 */
 #include "swbd/pdfium.hpp"
 
+#include <algorithm>
+#include <exception>
+#include <new>
+
 #include <windows.h>
 
 #include <cmath>
@@ -471,7 +475,8 @@ MergeResult merge_documents(Pdfium &pdfium, const std::vector<std::string> &inpu
     std::vector<FPDF_DOCUMENT> sources;
     int total = 0;
     for (const std::string &path : inputs_utf8) {
-        FPDF_DOCUMENT doc = pdfium.LoadDocument(path.c_str(), nullptr);
+        /* 與 Python 相同：每個來源都用同一組密碼開啟（空字串＝沒有密碼）。 */
+        FPDF_DOCUMENT doc = pdfium.LoadDocument(path.c_str(), password.empty() ? nullptr : password.c_str());
         if (!doc) {
             for (FPDF_DOCUMENT opened : sources) pdfium.CloseDocument(opened);
             out.error = "無法開啟 " + path + "（" + pdfium.last_error_text() + "）";
@@ -520,6 +525,19 @@ MergeResult merge_documents(Pdfium &pdfium, const std::vector<std::string> &inpu
 
 namespace {
 
+constexpr double kMaxRenderSide = 12000.0;        /* 單邊像素上限 */
+constexpr double kMaxRenderPixels = 80000000.0;   /* 面積上限（約 320 MB RGBA） */
+
+/* dpi/72，只有異常大的頁面才等比例縮小到上限內（engine.py 的 render_scale 用相同規則）。 */
+double capped_scale(double width_pt, double height_pt, double dpi) {
+    double scale = dpi / 72.0;
+    const double w0 = width_pt * scale, h0 = height_pt * scale;
+    const double side = (std::max)(w0, h0), area = w0 * h0;
+    if (side > kMaxRenderSide || area > kMaxRenderPixels)
+        scale *= (std::min)(kMaxRenderSide / side, std::sqrt(kMaxRenderPixels / area));
+    return scale;
+}
+
 /* 在已開啟的文件內渲染第 index（0 起算）頁成 PNG；兩個公開入口共用。 */
 RenderOutcome render_page_in_document(Pdfium &pdfium, FPDF_DOCUMENT doc, int index, double dpi,
                                       const std::string &png_path_utf8) {
@@ -529,7 +547,9 @@ RenderOutcome render_page_in_document(Pdfium &pdfium, FPDF_DOCUMENT doc, int ind
         out.error = "無法載入頁面";
         return out;
     }
-    const double scale = dpi / 72.0;
+    /* 像素上限：異常的 MediaBox 可能要求數 GB 的點陣圖。一般頁面（A0 @200 dpi 約 6600×9400）不受影響。 */
+    const double scale = capped_scale(static_cast<double>(pdfium.GetPageWidthF(page)),
+                                      static_cast<double>(pdfium.GetPageHeightF(page)), dpi);
     /* pypdfium2 以 ceil 計算像素尺寸（實測 595×842 pt @150 dpi → 1240×1755），必須一致才能逐像素比對。 */
     const int width = static_cast<int>(std::ceil(static_cast<double>(pdfium.GetPageWidthF(page)) * scale));
     const int height = static_cast<int>(std::ceil(static_cast<double>(pdfium.GetPageHeightF(page)) * scale));
@@ -640,20 +660,32 @@ RenderAll render_pages(Pdfium &pdfium, const std::string &pdf_path_utf8, const s
                所以在編碼執行緒裡去掉 alpha 通道，讓輸出格式與原本完全一致。
                這個重排放在worker 裡才不會變成瓶頸。 */
             const int width = task.width, height = task.height;
-            std::vector<unsigned char> rgb(static_cast<size_t>(width) * static_cast<size_t>(height) * 3u);
-            for (int y = 0; y < height; y++) {
-                const unsigned char *source = task.pixels.data() + static_cast<size_t>(y) * static_cast<size_t>(task.stride);
-                unsigned char *dest = rgb.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 3u;
-                for (int x = 0; x < width; x++) {
-                    dest[x * 3 + 0] = source[x * 4 + 0];
-                    dest[x * 3 + 1] = source[x * 4 + 1];
-                    dest[x * 3 + 2] = source[x * 4 + 2];
+            std::string error;
+            /* 例外不能離開 std::thread（會 std::terminate 整個程式）：在這裡接住，寫進 failure。 */
+            try {
+                std::vector<unsigned char> rgb(static_cast<size_t>(width) * static_cast<size_t>(height) * 3u);
+                for (int y = 0; y < height; y++) {
+                    const unsigned char *source = task.pixels.data() + static_cast<size_t>(y) * static_cast<size_t>(task.stride);
+                    unsigned char *dest = rgb.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 3u;
+                    for (int x = 0; x < width; x++) {
+                        dest[x * 3 + 0] = source[x * 4 + 0];
+                        dest[x * 3 + 1] = source[x * 4 + 1];
+                        dest[x * 3 + 2] = source[x * 4 + 2];
+                    }
                 }
+                written = swbd_write_png_utf8(task.path.c_str(), width, height, 3,
+                                              rgb.data(), width * 3);
+            } catch (const std::bad_alloc &) {
+                error = "記憶體不足，無法編碼這一頁";
+            } catch (const std::exception &ex) {
+                error = std::string("PNG 編碼失敗：") + ex.what();
+            } catch (...) {
+                error = "PNG 編碼失敗";
             }
-            written = swbd_write_png_utf8(task.path.c_str(), width, height, 3,
-                                          rgb.data(), width * 3);
+            task.pixels = std::vector<unsigned char>();      /* 早點還記憶體 */
             {
                 std::lock_guard<std::mutex> lock(mutex);
+                if (!error.empty() && failure.empty()) failure = error;
                 if (!written && failure.empty()) failure = "PNG 寫入失敗";
                 outstanding--;
                 has_room.notify_all();
@@ -676,7 +708,7 @@ RenderAll render_pages(Pdfium &pdfium, const std::string &pdf_path_utf8, const s
         const double page_width = static_cast<double>(pdfium.GetPageWidthF(page));
         const double page_height = static_cast<double>(pdfium.GetPageHeightF(page));
         const double page_dpi = dpi_for ? dpi_for(index, page_width, page_height) : dpi;
-        const double scale = (page_dpi > 0 ? page_dpi : 72.0) / 72.0;
+        const double scale = capped_scale(page_width, page_height, page_dpi > 0 ? page_dpi : 72.0);
         const int width = static_cast<int>(std::ceil(page_width * scale));
         const int height = static_cast<int>(std::ceil(page_height * scale));
         FPDF_BITMAP bitmap = (width > 0 && height > 0) ? pdfium.Bitmap_Create(width, height, 1) : nullptr;
@@ -696,15 +728,24 @@ RenderAll render_pages(Pdfium &pdfium, const std::string &pdf_path_utf8, const s
         task.width = width;
         task.height = height;
         task.stride = stride;
-        task.pixels.resize(static_cast<size_t>(stride) * static_cast<size_t>(height));
+        try {
+            task.pixels.resize(static_cast<size_t>(stride) * static_cast<size_t>(height));
+        } catch (const std::bad_alloc &) {
+            pdfium.Bitmap_Destroy(bitmap);
+            pdfium.ClosePage(page);
+            std::lock_guard<std::mutex> lock(mutex);
+            if (failure.empty()) failure = "記憶體不足，無法渲染這一頁";
+            break;                                        /* 照常往下：等編碼執行緒結束並 join */
+        }
         std::memcpy(task.pixels.data(), pdfium.Bitmap_GetBuffer(bitmap), task.pixels.size());
         pdfium.Bitmap_Destroy(bitmap);
         pdfium.ClosePage(page);
-        out.rendered = index + 1;
+        out.rendered = static_cast<int>(slot) + 1;
         if (progress && !progress(out.rendered, static_cast<int>(targets.size()))) { cancelled = true; break; }
         {
             std::unique_lock<std::mutex> lock(mutex);
             has_room.wait(lock, [&] { return outstanding < encode_threads * 2; });
+            if (!failure.empty()) break;                  /* 編碼執行緒已失敗：不再排新頁 */
             queue.push_back(std::move(task));
             outstanding++;
             has_work.notify_one();

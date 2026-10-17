@@ -780,10 +780,11 @@ static void host_keep_awake(int on) { SetThreadExecutionState(on ? (ES_CONTINUOU
 
 static void run_hidden(const wchar_t *exe, const wchar_t *args)
 {
-    wchar_t path[MAX_PATH], cmd[1024];
-    GetSystemDirectoryW(path, MAX_PATH);
-    wcscat(path, L"\\"); wcscat(path, exe);
-    swprintf(cmd, 1024, L"\"%s\" %s", path, args);
+    wchar_t sys[MAX_PATH], path[MAX_PATH + 64], cmd[1024];
+    const UINT n = GetSystemDirectoryW(sys, MAX_PATH);          /* 0＝失敗；>= MAX_PATH＝緩衝不夠 */
+    if (n == 0 || n >= MAX_PATH) return;
+    if (swprintf(path, sizeof path / sizeof *path, L"%s\\%s", sys, exe) < 0) return;
+    if (swprintf(cmd, sizeof cmd / sizeof *cmd, L"\"%s\" %s", path, args) < 0) return;
     STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
     if (CreateProcessW(path, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); }
 }

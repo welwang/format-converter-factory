@@ -154,7 +154,7 @@ def schema():
     opts = [[k, MODEL_LABEL[k]] for k in models] or [['base', '缺少離線辨識模型']]
     tools = []
     for t in TOOLS:
-        if t['id'] in ('v_autosub', 'a_transcribe', 'a_meeting'):
+        if t['id'] in ('v_autosub', 'a_transcribe', 'a_meeting', 's_chapters'):
             t = dict(t, fields=[dict(f, options=opts, default=opts[0][0]) if f['k'] == 'model' else f for f in t['fields']])
         tools.append(t)
     return dict(groups=GROUPS, tools=tools, font=bool(find_font()), whisper=whisper_ok() and bool(models), whisper_ffmpeg=whisper_ok(),
@@ -1546,7 +1546,14 @@ def _offline_pdf(eng,j,o):
     import pdf_tools
     return pdf_tools.run(eng,j,o)
 RUN.update({t['id']:_offline_pdf for t in PDF_SCHEMA.TOOLS})
+
+# AI 智慧工具（smart_tools.py）：放在分組最前面；它用到上面的共用函式，所以在檔案最後才載入
+import smart_tools as SMART
+TOOLS += SMART.TOOLS
+TOOL = {t['id']: t for t in TOOLS}
+GROUPS.insert(0, SMART.GROUP)
+RUN.update(SMART.RUN)
 assert set(RUN) == set(TOOL), set(TOOL) ^ set(RUN)
 
 # which tools mostly run ffmpeg (go to the small "heavy" pool)
-HEAVY = {t['id'] for t in TOOLS if t['group'] in ('video', 'disc')} | {'a_pitch', 'a_transcribe', 'a_meeting'}
+HEAVY = {t['id'] for t in TOOLS if t['group'] in ('video', 'disc')} | {'a_pitch', 'a_transcribe', 'a_meeting'} | SMART.HEAVY

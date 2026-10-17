@@ -70,6 +70,12 @@ def main(arg=None):
             if os.path.isfile(cand): shutil.copy(cand, S('i.heic')); break
         open(S('m.stl'), 'w').write('solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n')
 
+    if not os.path.isfile(S('talk.mp4')):     # AI 智慧工具：有停頓的說話聲、上下黑邊的影片
+        ff('-f', 'lavfi', '-i', 'testsrc2=s=1280x720:r=30:d=20', '-f', 'lavfi', '-i', 'sine=f=440:d=20', '-filter_complex',
+           "[1:a]volume='if(between(t,3,5)+between(t,9,12)+between(t,15,16),0.0005,1)':eval=frame[a]", '-map', '0:v', '-map', '[a]',
+           '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', S('talk.mp4'))
+        ff('-f', 'lavfi', '-i', 'testsrc2=s=1280x536:r=30:d=6', '-vf', 'pad=1280:720:0:92:black', '-c:v', 'libx264', '-preset', 'veryfast', S('letterbox.mp4'))
+
     eng = E.Engine(1, 1); results = []
     def wait(ids, limit=600):
         t0 = time.time()
@@ -107,7 +113,12 @@ def main(arg=None):
           ('i_resize', ['img1.jpg'], dict(val=800)), ('i_rotate', ['img1.jpg'], dict(op='cw', crop='1:1')), ('i_watermark', ['img1.jpg'], dict(pos='tile')),
           ('i_collage', ['img0.jpg', 'img1.jpg', 'img2.jpg'], {}), ('i_slideshow', ['img0.jpg', 'img1.jpg', 'img2.jpg'], dict(sec=2, size='1280x720')), ('i_gif', ['img0.jpg', 'img1.jpg'], {}),
           ('p_split', ['doc6.pdf'], {}), ('p_pages', ['doc6.pdf'], dict(pages='5,1-2')), ('p_rotate', ['doc6.pdf'], {}), ('p_encrypt', ['doc6.pdf'], dict(pw='1234')),
-          ('x_privacy', ['img0.jpg'], {}), ('x_privacy', ['v.mp4'], {}), ('x_privacy', ['doc6.pdf'], {})]
+          ('x_privacy', ['img0.jpg'], {}), ('x_privacy', ['v.mp4'], {}), ('x_privacy', ['doc6.pdf'], {}),
+          ('s_jumpcut', ['talk.mp4'], {}), ('s_jumpcut', ['talk.mp4'], dict(fmt='mp3')), ('s_highlight', ['talk.mp4'], dict(length=8, clip=2)),
+          ('s_highlight', ['talk.mp4'], dict(length=8, clip=2, ratio='9:16')), ('s_bestframe', ['v.mp4'], dict(count=3)),
+          ('s_photocull', ['img0.jpg', 'img1.jpg', 'img2.jpg', 'img3.jpg'], {}), ('s_autocrop', ['letterbox.mp4'], {}),
+          ('s_loudness', ['song.mp3'], dict(target='podcast')), ('s_loudness', ['v.mp4'], {}), ('s_smartname', ['img0.jpg', 'doc6.pdf', 'song.mp3'], {}),
+          ('s_quality', ['v.mp4'], dict(target='0.96'))]
     for tool, fs, o in tl:
         t = T.TOOL[tool]
         defaults = {f['k']: f['default'] for f in t['fields']}
@@ -127,6 +138,7 @@ def main(arg=None):
             if j.state == 'done': log('辨識結果：\n' + open(j.output, encoding='utf-8-sig').read())
             ids = eng.submit_tool('a_transcribe', [wav], dict(lang='zh', model='base', trad=True, fmt='docx', out_dir=out), '音檔轉文字'); wait(ids, 1800); report('音檔轉文字（Word）', ids)
             ids = eng.submit_tool('a_meeting', [wav], dict(lang='zh', model='base', mode='extract', points=5, out_dir=out), '會議總結'); wait(ids, 1800); report('會議總結（快速摘錄）', ids)
+            ids = eng.submit_tool('s_chapters', [wav], dict(lang='zh', model='base', trad=True, mode='extract', count=0, embed=False, out_dir=out), 'AI 自動章節'); wait(ids, 1800); report('AI 自動章節（快速摘錄）', ids)
             if T.ai_ok():
                 ids = eng.submit_tool('a_meeting', [wav], dict(lang='zh', model='base', mode='ai', points=5, out_dir=out), '會議總結'); wait(ids, 1800); report('會議總結（離線 AI）', ids)
         else: log('SKIP 無法用 Windows 語音產生測試音檔')

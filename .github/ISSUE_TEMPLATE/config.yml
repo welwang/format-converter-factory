@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全性問題
+    url: https://github.com/welwang/format-converter-factory/security/advisories/new
+    about: 請私下回報安全性問題，不要公開。
+  - name: 使用說明
+    url: https://github.com/welwang/format-converter-factory#readme
+    about: 先看看 README 的功能說明與常見問題。

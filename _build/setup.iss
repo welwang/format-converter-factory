@@ -1,5 +1,5 @@
 ﻿#define AppName "四維八德"
-#define AppVer "2.3.4"
+#define AppVer "1.0"
 #ifndef ReleaseRoot
 #define ReleaseRoot AddBackslash(SourcePath) + ".."
 #endif
@@ -77,7 +77,7 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\ZhuanDangGongChang\command
 Filename: "{app}\tools\WebView2-offline-x64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安裝視窗元件 WebView2…"; Check: NeedWebView2; Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\四維八德.exe"; Description: "立即開啟四維八德"; Flags: nowait postinstall skipifsilent
 [InstallDelete]
-; 2.3.4 起不再隨附的舊說明與測試報告（升級安裝時清掉）
+; 舊版安裝遺留的說明與測試報告（升級安裝時清掉）
 Type: files; Name: "{app}\使用說明.md"
 Type: files; Name: "{app}\版本更新.md"
 Type: files; Name: "{app}\PDF功能清單.md"

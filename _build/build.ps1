@@ -10,6 +10,15 @@ $candidate = Join-Path $stage 'dist\swbd-core'
 # Windows PowerShell 5.1 turns a native program's stderr into a terminating error while
 # $ErrorActionPreference is 'Stop' — PyInstaller, ffmpeg, the frozen core and ISCC all log there,
 # so every native step goes through this helper. Output stays visible and the exit code is returned.
+# SHA-256（小寫十六進位）。直接用 .NET，不依賴 Get-FileHash：從 PowerShell 7 呼叫 5.1 時，
+# 繼承的 PSModulePath 會讓 5.1 載入錯版本的 Microsoft.PowerShell.Utility，Get-FileHash 就不存在。
+function Get-Sha256([string]$Path) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') }
+    finally { $stream.Dispose(); $sha.Dispose() }
+}
+
 function Invoke-Native([scriptblock]$Command) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -67,7 +76,7 @@ try {
         $outDir = Join-Path $candidate '輸出'
         $packages = @(Get-ChildItem -LiteralPath $outDir -File -Filter '*.exe' -ErrorAction SilentlyContinue)
         if (-not $packages.Count) { throw '找不到產生的安裝程式，無法建立校驗清單。' }
-        $sums = $packages | Sort-Object Name | ForEach-Object { '{0} *{1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+        $sums = $packages | Sort-Object Name | ForEach-Object { '{0} *{1}' -f (Get-Sha256 $_.FullName), $_.Name }
         [IO.File]::WriteAllLines((Join-Path $outDir 'SHA256SUMS.txt'), [string[]]$sums, (New-Object Text.UTF8Encoding $false))
         Write-Host "已建立校驗清單：$(Join-Path $outDir 'SHA256SUMS.txt')"
     }

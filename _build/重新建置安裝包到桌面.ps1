@@ -1,6 +1,14 @@
 ﻿# 一鍵：重新建置最新版 → 安裝包與免安裝版放到桌面 → 換上新版程式 → 刪除舊版本。
 # 建置或測試任何一步失敗就停止，這時不會刪除任何東西。
 $ErrorActionPreference = 'Stop'
+# SHA-256（小寫十六進位）。直接用 .NET，不依賴 Get-FileHash：從 PowerShell 7 呼叫 5.1 時，
+# 繼承的 PSModulePath 會讓 5.1 載入錯版本的 Microsoft.PowerShell.Utility，Get-FileHash 就不存在。
+function Get-Sha256([string]$Path) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') }
+    finally { $stream.Dispose(); $sha.Dispose() }
+}
 $build = $PSScriptRoot
 $root = Split-Path -Parent $build
 try {
@@ -25,7 +33,7 @@ try {
     Get-ChildItem -LiteralPath $desktop -Filter '四維八德_*_離線安裝程式.exe' -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne $setup.Name } | Remove-Item -Force
     Copy-Item -LiteralPath $setup.FullName -Destination $desktop -Force
     $onDesktop = Join-Path $desktop $setup.Name
-    if ((Get-FileHash -LiteralPath $onDesktop).Hash -ne (Get-FileHash -LiteralPath $setup.FullName).Hash) { throw '桌面上的安裝程式校驗不符。' }
+    if ((Get-Sha256 $onDesktop) -ne (Get-Sha256 $setup.FullName)) { throw '桌面上的安裝程式校驗不符。' }
 
     Write-Host '3/5 整理免安裝版（解壓縮後直接執行 四維八德.exe）…' -ForegroundColor Cyan
     $version = ($setup.BaseName -replace '^四維八德_', '' -replace '_離線安裝程式$', '')
@@ -49,10 +57,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '免安裝版壓縮檔驗證失敗。' }
     Get-ChildItem -LiteralPath $desktop -Filter '四維八德_*_免安裝版.zip' -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne $zipName } | Remove-Item -Force
     Copy-Item -LiteralPath $zip -Destination $desktop -Force
-    if ((Get-FileHash -LiteralPath (Join-Path $desktop $zipName)).Hash -ne (Get-FileHash -LiteralPath $zip).Hash) { throw '桌面上的免安裝版校驗不符。' }
+    if ((Get-Sha256 (Join-Path $desktop $zipName)) -ne (Get-Sha256 $zip)) { throw '桌面上的免安裝版校驗不符。' }
     # 桌面上的兩個檔案一起列進校驗清單
     $sumName = "四維八德_$($version)_SHA256SUMS.txt"
-    $sums = foreach ($f in @($setup.Name, $zipName)) { '{0} *{1}' -f (Get-FileHash -LiteralPath (Join-Path $desktop $f) -Algorithm SHA256).Hash.ToLower(), $f }
+    $sums = foreach ($f in @($setup.Name, $zipName)) { '{0} *{1}' -f (Get-Sha256 (Join-Path $desktop $f)), $f }
     Get-ChildItem -LiteralPath $desktop -Filter '四維八德_*_SHA256SUMS.txt' -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne $sumName } | Remove-Item -Force
     [IO.File]::WriteAllLines((Join-Path $desktop $sumName), [string[]]$sums, (New-Object Text.UTF8Encoding $false))
     Remove-Item -LiteralPath $work -Recurse -Force

@@ -70,7 +70,7 @@ if (-not $SkipCommit) {
         '重新建置安裝包到桌面.cmd', 'assets', 'source\來源清單.json',
         '_build\src\health_check.py', '_build\src\smart_tools.py', '_build\src\ui',
         '_build\shell', '_build\cpp', '_build\logo',
-        '_build\compliance\compliance_audit.py', '_build\compliance\gate_release.ps1', '_build\compliance\keep',
+        '_build\compliance\compliance_audit.py', '_build\compliance\gate_release.ps1',
         '_build\build.ps1', '_build\setup.iss', '_build\ZDGC.spec',
         '_build\整理舊檔.ps1', '_build\部署最新候選版.ps1', '_build\重新建置安裝包到桌面.ps1', '_build\整理與提交_第0批.ps1'
     ) | Where-Object { Test-Path -LiteralPath (Join-Path $root $_) }
@@ -105,7 +105,7 @@ if (-not $SkipCommit) {
                 if ($LASTEXITCODE -eq 0) { Write-Host "   略過（被 .gitignore 排除）：$p" -ForegroundColor Yellow; continue }
                 RunGit @('add', '--', $p) | Out-Null
             }
-            $msg = "整理：2.3.4 文件與治理檔、電腦健康檢查、AI 智慧工具、功能缺陷修正、合規閘門 fail-closed`n`n保留的發布測試在 _build/compliance/keep（rt_ 前綴）。"
+            $msg = "整理：初版 1.0 文件與治理檔、電腦健康檢查、AI 智慧工具、功能缺陷修正、合規閘門 fail-closed"
             RunGit @('commit', '-q', '-m', $msg) | Out-Null
             Write-Host "   已提交：$(RunGit @('log', '-1', '--format=%h %s') | Select-Object -First 1)" -ForegroundColor Green
         }

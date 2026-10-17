@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/版本-2.3.4-2a6bff">
+  <img alt="版本" src="https://img.shields.io/badge/版本-1.0-2a6bff">
   <img alt="平台" src="https://img.shields.io/badge/平台-Windows%2010%20%7C%2011%20x64-0078d4">
   <img alt="授權" src="https://img.shields.io/badge/授權-GPL--3.0%20%2F%20AGPL--3.0-34c759">
   <img alt="離線" src="https://img.shields.io/badge/處理方式-完全本機-ff9500">
@@ -336,7 +336,7 @@ PDF 功能全部自行實作，使用本機開源引擎，不呼叫 iLovePDF 或
 - **暫存清理**：先掃描並預覽要清理的檔案與大小，確認後才刪除。範圍包括四維八德舊暫存、未完成的模型下載、舊診斷記錄與使用者暫存資料夾中 7 天以上的散落檔案；不清理登錄檔，跳過正在使用或已變動的檔案。
 
 > [!NOTE]
-> 2.3.4 起已移除「磁碟檢查與修復」。需要時請使用 Windows 內建的 `chkdsk`，或在磁碟「內容 → 工具 → 檢查」執行。
+> 本程式不提供「磁碟檢查與修復」。需要時請使用 Windows 內建的 `chkdsk`，或在磁碟「內容 → 工具 → 檢查」執行。
 
 ### 操作小技巧與快捷鍵
 
@@ -370,7 +370,7 @@ PDF 功能全部自行實作，使用本機開源引擎，不呼叫 iLovePDF 或
 | 字幕 | srt ass ssa vtt sub lrc | srt ass vtt |
 | 3D 模型 | obj stl ply glb gltf off 3mf | glb obj stl ply |
 
-**不支援的格式**會直接標示原因：有 DRM 的 Kindle KFX 與舊 AZW、Apple Keynote 與 Numbers（請先在原軟體匯出），WPS 舊格式支援有限。為了品質，2.3.0 起移除 EPUB→MOBI 與 STL→GLB。
+**不支援的格式**會直接標示原因：有 DRM 的 Kindle KFX 與舊 AZW、Apple Keynote 與 Numbers（請先在原軟體匯出），WPS 舊格式支援有限。為了品質，本版移除 EPUB→MOBI 與 STL→GLB。
 
 ## 隱私與安全
 

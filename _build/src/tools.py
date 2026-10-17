@@ -544,6 +544,11 @@ def t_split(eng, j, o):
         c = base_cmd() + ['-i', src] + (['-map', '0:v:0'] if isv else []) + ['-map', '0:a?']
         if exact and isv:
             c += venc_args(j, pat.replace('%03d', '000'), d, E.detect_hw() if o.get('hwaccel', True) else [])
+            # NVENC 的 -force_key_frames 不保證產生 IDR 影格，segment 分段器因此切不開
+            # （實測 8 秒每 3 秒切只得到 1 段）。要求強制關鍵影格輸出 IDR。
+            # 這個選項只存在於 nvenc，其他編碼器收到會直接報錯，所以要看實際選用的編碼器。
+            if str(j.encoder).startswith(('h264_nvenc', 'hevc_nvenc')):
+                c += ['-forced-idr', '1']
             c += ['-force_key_frames', f'expr:gte(t,n_forced*{seg:.3f})']
         elif exact:
             c += E.audio_args(ext, o) if (ext in E.AUDIO_COPY or ext == 'wav') else ['-c:a', 'aac', '-b:a', '192k']
@@ -560,6 +565,8 @@ def t_split(eng, j, o):
     if not exact and n < expected * 0.75:
         n = go(True); j.encoder += '（原檔關鍵影格太少，已自動改用精準切割）'
     j.encoder += f'，共 {n} 段'
+    if n < expected * 0.75:      # 寧可失敗，也不要交出段數不對的成品
+        raise RuntimeError(f'分割後只有 {n} 段，預期約 {expected} 段')
 
 def t_stab(eng, j, o):
     need_ff(); src = j.files[0]; d = info(src)['dur']; sm = int(num(o, 'strength', 15))

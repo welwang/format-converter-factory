@@ -556,8 +556,9 @@ def diff_report(scan: dict, inv: dict) -> dict:
 
     # 3) 版本不一致：安裝程式檔名／PE 版本 vs 來源清單
     app_version = read_app_version()
-    installed = installed_version()
-    versions = {"inventory": inv.get("version", "UNKNOWN"), "artifact": app_version, "installed": installed}
+    # 只比對建置產物與來源清單。建置機上「已安裝的版本」與這份產物無關，
+    # 納入判定會讓同一份產物在不同電腦得到不同結果（發行檢查不應依賴開發機裝了什麼）。
+    versions = {"inventory": inv.get("version", "UNKNOWN"), "artifact": app_version}
     bad = {k: v for k, v in versions.items() if v not in ("UNKNOWN", inv.get("version"))}
     if bad:
         findings.append({
@@ -736,7 +737,7 @@ def write_reports(sbom: dict, diff: dict, sources: dict, gate_result: dict, scan
         f"- 產生時間：{gate_result['generated_at']}",
         f"- 掃描對象：`{scan['payload']}`",
         f"- 應用程式版本（實際產物）：**{diff['artifact_version']}**",
-        f"- 應用程式版本（已安裝在使用者機器上）：**{installed_version()}**",
+        f"- 建置機上已安裝的版本（僅供參考，不列入判定）：**{installed_version()}**",
         f"- 來源清單版本：**{diff['inventory_version']}**",
         f"- SBOM 元件數：**{len(comps)}**（代表性檔案合計 {human_bytes(total_bytes)}）",
         f"- **發布閘門結果：{gate_result['result']}**",

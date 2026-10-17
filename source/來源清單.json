@@ -38,7 +38,7 @@
     "qpdf、LibRaw、Python 擴充模組及供應鏈元件需確認隨附來源封裝是否涵蓋二進位中的所有修訂。",
     "Microsoft 元件依其再散布條件提供，不能以 GPL／AGPL 重新授權。"
   ],
-  "notice": "應用程式原始碼保留於公開儲存庫，安裝包包含本版應用程式來源、授權及來源記錄。發布頁不另提供來源 ZIP；上游來源網址及精確修訂核實缺口保留於本清單。第三方完整對應來源散布審核尚未完成。",
+  "notice": "應用程式原始碼保留於公開儲存庫（source_download）。安裝包包含授權文件、來源清單與取得方式；上游來源封裝不放入安裝包（source_archives_in_installer=false）。上游來源網址及精確修訂核實缺口保留於本清單。第三方完整對應來源散布審核尚未完成。",
   "webview2_sdk": {
     "version": "1.0.4258.31",
     "url": "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31",

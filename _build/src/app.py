@@ -9,7 +9,7 @@ import system_tools as ST
 import file_actions as FA
 
 SETTINGS = os.path.join(E.data_dir(), 'settings.json')
-VERSION = '2.3.4'
+VERSION = '1.0'
 EDITION = '開源版'
 TITLE = f'四維八德（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,

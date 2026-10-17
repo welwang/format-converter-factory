@@ -354,27 +354,6 @@ def monitors_safe():
 
 api = None   # set by core.py
 
-def monitor():
-    """Window title shows overall progress; the PC does not go to sleep mid-conversion; the taskbar button flashes when done."""
-    import time
-    was = False; sleep_blocked = False; shown = TITLE
-    while True:
-        time.sleep(1)
-        try:
-            jobs = api._eng.status(); act = [j for j in jobs if j['state'] in ('queued', 'running')]
-            busy = bool(act)
-            title = f'{sum(j["progress"] for j in act) / len(act) * 100:.0f}% · {len(act)} 個工作 — {TITLE}' if busy else TITLE
-            if api._win and title != shown:
-                api._win.set_title(title); shown = title
-            if os.name == 'nt':
-                import ctypes
-                if busy and not sleep_blocked: ctypes.windll.kernel32.SetThreadExecutionState(0x80000001); sleep_blocked = True
-                elif not busy and sleep_blocked: ctypes.windll.kernel32.SetThreadExecutionState(0x80000000); sleep_blocked = False
-            if was and not busy and api._win: api._win.flash()
-            was = busy
-        except Exception:
-            pass
-
 if __name__ == '__main__':
     import core
     sys.exit(core.main())

@@ -38,6 +38,23 @@ try {
     foreach ($name in 'README.md','CHANGELOG.md','授權說明.md','使用授權條款.md','LICENSE','COPYING.AGPL-3.0','開源與散布說明.md') {
         Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $candidate
     }
+    # 「對應原始碼」用這次建置的實際原始碼重生，取代 source\application 的舊快照。
+    # 原本那份是前一個版本的殘留：安裝包宣稱內含本版來源，內容卻對不上。
+    $srcApp = Join-Path $candidate 'source\application'
+    if (Test-Path -LiteralPath $srcApp) { Remove-Item -LiteralPath $srcApp -Recurse -Force }
+    foreach ($part in 'src','shell','cpp') {
+        $dst = Join-Path $srcApp ('_build\' + $part)
+        New-Item -ItemType Directory -Path $dst -Force | Out-Null
+        & robocopy (Join-Path $projectRoot ('_build\' + $part)) $dst /E /NFL /NDL /NJH /NJS /NP /XD __pycache__ build out sdk | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "複製對應原始碼失敗：_build\$part" }
+    }
+    New-Item -ItemType Directory -Path (Join-Path $srcApp '_build') -Force | Out-Null
+    foreach ($f in 'build.ps1','setup.iss','ZDGC.spec','requirements-lock.txt') {
+        Copy-Item -LiteralPath (Join-Path $buildRoot $f) -Destination (Join-Path $srcApp '_build') -Force
+    }
+    foreach ($f in 'README.md','CHANGELOG.md','授權說明.md','使用授權條款.md','LICENSE','COPYING.AGPL-3.0','開源與散布說明.md') {
+        Copy-Item -LiteralPath (Join-Path $projectRoot $f) -Destination $srcApp -Force
+    }
     if ((Invoke-Native { & $python -c "import sys;sys.path.insert(0,sys.argv[1]);import engine as E;E.base_dir=lambda:sys.argv[2];m=E.missing_components();print(m);sys.exit(bool(m))" (Join-Path $buildRoot 'src') $candidate }) -ne 0) { throw '缺少完整離線元件，停止打包。' }
     $heic = Join-Path $buildRoot 'samples\i.heic'
     if (Test-Path -LiteralPath $heic) {
@@ -70,6 +87,21 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'PDF 打包測試失敗。' }
     $pdfResults = Get-Content -LiteralPath (Join-Path $pdf 'results.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($pdfResults.Count -ne 12 -or @($pdfResults | Where-Object { -not $_.ok }).Count) { throw 'PDF 打包結果不完整。' }
+    # 煙霧測試與自我檢測會在候選目錄寫入執行期狀態；打包前清掉，避免污染成品與免安裝版 ZIP。
+    foreach ($name in 'logs','smoke-fixtures','smoke-output','webview-test-profile','_build') {
+        $stale = Join-Path $candidate $name
+        if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force }
+    }
+    foreach ($name in 'settings.json','window.ini','watch_state.json','hw_cache.json','hw_cache_c.json','ffmpeg_caps.json') {
+        $stale = Join-Path $candidate $name
+        if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Force }
+    }
+    # 授權證據：PyInstaller 收進來的 pdfium.dll 旁邊放一份 PDFium 的 BSD 授權，供合規稽核查證。
+    $pdfiumDir = Join-Path $candidate '_internal\pypdfium2_raw'
+    $pdfiumLicense = Join-Path $buildRoot 'licenses\PDFium-BSD-3-Clause.txt'
+    if ((Test-Path -LiteralPath $pdfiumDir) -and (Test-Path -LiteralPath $pdfiumLicense)) {
+        Copy-Item -LiteralPath $pdfiumLicense -Destination $pdfiumDir -Force
+    }
     if (-not $SkipPackages) {
         if ((Invoke-Native { & (Join-Path $buildRoot 'inno\ISCC.exe') ("/DReleaseRoot="+$candidate) (Join-Path $buildRoot 'setup.iss') }) -ne 0) { throw '安裝程式建置失敗。' }
         # 校驗清單（sha256sum 格式「雜湊 *檔名」）：發布頁與使用者可用 certutil -hashfile 或 Get-FileHash 核對

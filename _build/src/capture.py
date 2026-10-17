@@ -308,6 +308,10 @@ class Watcher:
     def _save(self):
         try:
             with self.lock:
+                # 只增不減會讓狀態檔與記憶體無限長大：每個監控資料夾只留最近 2000 筆
+                for items in list(self.seen.values()):
+                    while len(items) > 2000: items.pop(next(iter(items)))
+                if len(self.sizes) > 20000: self.sizes.clear()   # 只是檔案大小快取，重算即可
                 with open(self.state_file + '.tmp', 'w', encoding='utf-8') as fh: json.dump(self.seen, fh, ensure_ascii=False)
                 os.replace(self.state_file + '.tmp', self.state_file)
         except Exception: pass

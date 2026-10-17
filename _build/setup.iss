@@ -27,9 +27,8 @@ SolidCompression=yes
 ; 64 MB dictionary limits installer extraction memory use.
 LZMADictionarySize=65536
 LZMANumFastBytes=273
-LZMAUseSeparateProcess=yes
 SetupIconFile={#AddBackslash(SourcePath)}logo.ico
-LZMANumBlockThreads=1
+LZMANumBlockThreads=4
 WizardStyle=modern
 MinVersion=10.0
 ArchitecturesAllowed=x64compatible

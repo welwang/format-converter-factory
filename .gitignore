@@ -36,6 +36,7 @@ autosync/state/
 /_build/compliance/out/
 !/_build/logo/
 /_build/logo/舊版/
+!/_build/licenses/
 !/_build/build.ps1
 !/_build/setup.iss
 !/_build/ZDGC.spec

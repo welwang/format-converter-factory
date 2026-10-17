@@ -752,6 +752,33 @@ def to_trad(text):
     except Exception:
         return text
 
+# 語音模型對專有名詞容易聽錯（例如把「四維八德」聽成「四維巴德」）。
+# 預設表之外，使用者可在程式資料夾放 asr_terms.json 自行補充：
+#   [{"wrong": "四維巴德", "right": "四維八德"}, ...]
+_DEFAULT_ASR_FIXES = {'四維巴德': '四維八德'}
+_ASR_FIXES = None
+
+def asr_fixes():
+    global _ASR_FIXES
+    if _ASR_FIXES is not None: return _ASR_FIXES
+    terms = dict(_DEFAULT_ASR_FIXES)
+    try:
+        path = os.path.join(E.base_dir(), 'asr_terms.json')
+        if os.path.isfile(path):
+            with open(path, encoding='utf-8') as fh:
+                for item in json.load(fh):
+                    wrong, right = item.get('wrong'), item.get('right')
+                    if wrong and right: terms[wrong] = right
+    except Exception:
+        pass
+    _ASR_FIXES = terms
+    return terms
+
+def asr_fix(text):
+    for wrong, right in asr_fixes().items():
+        if wrong in text: text = text.replace(wrong, right)
+    return text
+
 def whisper_srt(eng, j, src, o, base=0.0, span=1.0):
     """Offline speech recognition (whisper.cpp inside ffmpeg) -> cleaned SRT text (Traditional Chinese if asked)."""
     need_ff()
@@ -782,7 +809,7 @@ def whisper_srt(eng, j, src, o, base=0.0, span=1.0):
         if not os.path.isfile(sp) or os.path.getsize(sp) < 5: raise RuntimeError('沒有辨識到任何語音')
         with open(sp, encoding='utf-8', errors='replace') as fh: text = fix_srt(fh.read())
         if o.get('trad', True) and lang in ('zh', 'auto'): text = to_trad(text)
-        return text
+        return asr_fix(text)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

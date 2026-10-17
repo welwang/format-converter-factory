@@ -1,0 +1,67 @@
+# 持續檢查：只跑不需要隨附引擎（tools\ 2.8 GB，不進版控）的部分。
+# 完整建置與打包仍在本機執行（_build\重新建置安裝包到桌面.cmd）。
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python 語法檢查
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem -Path _build/src -Filter *.py -Recurse | ForEach-Object {
+            & python -m py_compile $_.FullName
+            if ($LASTEXITCODE -ne 0) { Write-Host "FAIL $($_.Name)"; $bad++ }
+          }
+          if ($bad -gt 0) { throw "$bad 個 Python 檔案無法編譯" }
+
+      - name: PowerShell 解析檢查
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem -Path _build -Filter *.ps1 -Recurse |
+            Where-Object { $_.FullName -notmatch '\\release-stage-|\\deploy-backup-|\\venv\\' } |
+            ForEach-Object {
+              $errs = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errs)
+              if ($errs -and $errs.Count -gt 0) { Write-Host "FAIL $($_.Name): $($errs[0].Message)"; $bad++ }
+            }
+          if ($bad -gt 0) { throw "$bad 個 PowerShell 檔案解析失敗" }
+
+      - name: 來源清單 JSON 有效性
+        shell: pwsh
+        run: |
+          python -c "import json,io,sys; d=json.load(io.open('source/來源清單.json',encoding='utf-8')); print('version', d.get('version')); sys.exit(0)"
+
+      - name: C++ 核心層編譯（不需要 WebView2 SDK 與 tools\）
+        shell: pwsh
+        run: |
+          cmake -S _build/cpp -B build/ci-cpp
+          if ($LASTEXITCODE -ne 0) { throw 'CMake 設定失敗' }
+          cmake --build build/ci-cpp --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'C++ 核心層編譯失敗' }
+
+      - name: 合規稽核（不阻斷；僅上傳 SBOM 與報告）
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # gate_release.ps1 需要完整 payload（tools\），CI 沒有；直接跑稽核工具產出報告
+          python _build/compliance/compliance_audit.py all 2>&1 | Select-Object -Last 40
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compliance-report
+          path: _build/compliance/out/
+          if-no-files-found: ignore

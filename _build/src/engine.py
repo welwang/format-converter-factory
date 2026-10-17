@@ -236,7 +236,7 @@ def flatten(im, bg=(255, 255, 255)):
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=NOWIN, **kw)
 
-_PROBE = {}; _PROBE_LOCK = threading.Lock()
+_PROBE = {}; _PROBE_LOCK = threading.Lock(); _PROBE_MAX = 4096   # 只增不減會隨處理過的檔案數一直長大
 def probe_info(path):
     """dict(dur, streams, height, akbps, acodec) via ffmpeg -i (no ffprobe needed, saves ~210 MB).
     Cached per file+mtime so one job never runs ffmpeg -i twice on the same file."""
@@ -265,7 +265,9 @@ def probe_info(path):
             if mm: akbps = int(mm.group(1))
     res = dict(dur=dur, streams=streams, height=h, width=w, akbps=akbps, acodec=acodec, hdr=hdr)
     if key:
-        with _PROBE_LOCK: _PROBE[key] = res
+        with _PROBE_LOCK:
+            if len(_PROBE) >= _PROBE_MAX: _PROBE.pop(next(iter(_PROBE)))   # 最舊的先丟
+            _PROBE[key] = res
     return res
 
 def hdr_filters(path):

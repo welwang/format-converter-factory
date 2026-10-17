@@ -19,5 +19,14 @@
   "tools/calibre/app/resources/viewer.js.map",
   "tools/calibre/app/resources/editor.js",
   "tools/calibre/app/resources/editor-help",
-  "tools/calibre/app/resources/quick_start"
+  "tools/calibre/app/resources/quick_start",
+  "tools/calibre/app/bin/opengl32sw.dll",
+  "tools/calibre/app/bin/d3dcompiler_47.dll",
+  "tools/calibre/app/bin/avcodec-61.dll",
+  "tools/calibre/app/bin/avformat-61.dll",
+  "tools/calibre/app/bin/avutil-59.dll",
+  "tools/calibre/app/bin/swresample-5.dll",
+  "tools/calibre/app/bin/swscale-8.dll",
+  "tools/calibre/app/bin/Qt6Multimedia.dll",
+  "tools/calibre/app/bin/Qt6MultimediaWidgets.dll"
 ]

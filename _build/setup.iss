@@ -1,5 +1,5 @@
 ﻿#define AppName "四維八德"
-#define AppVer "1.0"
+#define AppVer "1.1"
 #ifndef ReleaseRoot
 #define ReleaseRoot AddBackslash(SourcePath) + ".."
 #endif
@@ -42,23 +42,12 @@ Name: "cht"; MessagesFile: "compiler:Languages\ChineseTraditional.isl"
 Name: "desktopicon"; Description: "建立桌面捷徑"; GroupDescription: "其他捷徑："
 Name: "sendto"; Description: "加入檔案總管右鍵「傳送到」"; GroupDescription: "其他捷徑："
 Name: "ctxmenu"; Description: "在檔案與資料夾的右鍵選單加入「用四維八德開啟」"; GroupDescription: "其他捷徑："
-[Types]
-Name: "full"; Description: "完整安裝（建議）"
-Name: "compact"; Description: "精簡安裝：不含 Office、電子書轉檔與 WebView2 離線安裝檔（約省 1 GB 磁碟空間）"
-Name: "custom"; Description: "自行選擇"; Flags: iscustom
-[Components]
-Name: "core"; Description: "主程式、影音、圖片與 PDF"; Types: full compact custom; Flags: fixed
-Name: "office"; Description: "離線 Office 文件、試算表、簡報轉檔與 Office→PDF（LibreOffice）"; Types: full custom
-Name: "ebook"; Description: "離線電子書轉檔（Calibre：EPUB、MOBI、AZW3）"; Types: full custom
-Name: "webview2"; Description: "WebView2 離線安裝檔（只有沒有 WebView2 的電腦需要；Windows 11 已內建）"; Types: full custom
 [Files]
 Source: "{#ReleaseRoot}\四維八德.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseRoot}\swbd-core.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseRoot}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#ReleaseRoot}\tools\*"; DestDir: "{app}\tools"; Excludes: "libreoffice\*,calibre\*,WebView2-offline-x64.exe,*.part,*.tmp,ghostscript\vcredist_x64.exe,ghostscript\$PLUGINSDIR\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
-Source: "{#ReleaseRoot}\tools\WebView2-offline-x64.exe"; DestDir: "{app}\tools"; Flags: ignoreversion; Components: webview2
-Source: "{#ReleaseRoot}\tools\libreoffice\*"; DestDir: "{app}\tools\libreoffice"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: office
-Source: "{#ReleaseRoot}\tools\calibre\*"; DestDir: "{app}\tools\calibre"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: ebook
+Source: "{#ReleaseRoot}\tools\*"; DestDir: "{app}\tools"; Excludes: "WebView2-offline-x64.exe,*.part,*.tmp,ghostscript\vcredist_x64.exe,ghostscript\$PLUGINSDIR\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; WebView2 離線安裝檔（214 MB，無法再壓縮）不放進安裝程式：Windows 11 已內建，缺少的電腦由下方 [Run] 的線上安裝器補上。免安裝版仍內含。
 Source: "{#ReleaseRoot}\README.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\CHANGELOG.md"; DestDir: "{app}"
 Source: "{#ReleaseRoot}\授權說明.md"; DestDir: "{app}"
@@ -81,8 +70,7 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\ZhuanDangGongChang"; Value
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\ZhuanDangGongChang"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\四維八德.exe"; Tasks: ctxmenu
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\ZhuanDangGongChang\command"; ValueType: string; ValueName: ""; ValueData: """{app}\四維八德.exe"" ""%1"""; Tasks: ctxmenu
 [Run]
-Filename: "{app}\tools\WebView2-offline-x64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安裝視窗元件 WebView2…"; Check: NeedWebView2; Flags: waituntilterminated skipifdoesntexist; Components: webview2
-Filename: "{app}\tools\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "正在從網路安裝視窗元件 WebView2…"; Check: NeedWebView2; Flags: waituntilterminated skipifdoesntexist; Components: not webview2
+Filename: "{app}\tools\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "正在從網路安裝視窗元件 WebView2…"; Check: NeedWebView2; Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\四維八德.exe"; Description: "立即開啟四維八德"; Flags: nowait postinstall skipifsilent
 [InstallDelete]
 ; 舊版安裝遺留的說明與測試報告（升級安裝時清掉）
@@ -94,6 +82,8 @@ Type: files; Name: "{app}\測試報告.html"
 Type: files; Name: "{app}\工程技術說明書.md"
 Type: files; Name: "{app}\assets\logo-sm.png"
 Type: files; Name: "{app}\_internal\ui\logo-sm.png"
+; 舊版安裝留下的 WebView2 離線安裝檔（升級時這台電腦已經有 WebView2，用不到）
+Type: files; Name: "{app}\tools\WebView2-offline-x64.exe"
 [UninstallDelete]
 Type: files; Name: "{app}\settings.json"
 Type: files; Name: "{app}\hw_cache.json"

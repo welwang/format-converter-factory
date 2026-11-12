@@ -134,8 +134,8 @@ COMPONENTS = [
     ('WebView2 離線安裝檔', ['WebView2-offline-x64.exe'], '沒有 WebView2 的電腦開啟視窗'),
 ]
 
-# 安裝時可以不選的元件（精簡安裝）：整個沒有安裝不算缺件；裝了卻缺檔才算。建置檢查用 strict=True，全部都要有。
-OPTIONAL_COMPONENTS = {'LibreOffice', 'Calibre', 'WebView2 離線安裝檔'}
+# 安裝程式不內含的元件（只有免安裝版有）：整個沒有不算缺件；建置檢查用 strict=True，全部都要有。
+OPTIONAL_COMPONENTS = {'WebView2 離線安裝檔'}
 
 def missing_components(strict=False):
     """Bundled pieces that are absent - each one silently disables features on a clean PC, so the window

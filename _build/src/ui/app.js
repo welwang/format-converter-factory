@@ -149,7 +149,7 @@ $('#queue').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if
 $('#queue').ondblclick=e=>{const b=e.target.closest('.q');const f=b&&b.querySelector('[data-f]');if(f)call('open_file',f.dataset.f).catch(()=>{})};
 function sizeDelta(j){if(!j.out_size||!j.in_size||j.kind=='rec'||j.kind=='dl')return j.out_size&&j.kind?fmtSize(j.out_size)+'　':'';const d=(j.out_size-j.in_size)/j.in_size;
  return `${fmtSize(j.in_size)} → ${fmtSize(j.out_size)}${Math.abs(d)>=0.01?`（<span class="${d<0?'save':''}">${d<0?'−':'+'}${Math.abs(d*100).toFixed(0)}%</span>）`:''}　`}
-$('#openlog').onclick=()=>API.open_log();
+$('#openlog').onclick=async()=>{let ok=false;try{ok=await API.open_issue()}catch(e){}if(!ok)toast('無法開啟瀏覽器，請到 github.com/welwang/format-converter-factory/issues 提出問題',1)};
 function about(welcome){$('#awel').style.display=welcome?'':'none';$('#aok').textContent=welcome?'開始使用':'完成';$('#amodal').classList.add('on')}
 $('#sbhead').onclick=()=>about(false);$('#aok').onclick=()=>{$('#amodal').classList.remove('on');if(!S.welcomed){S.welcomed=true;save()}};
 $('#amodal .links').onclick=e=>{const d=e.target.dataset.doc;if(!d)return;if(d=='log')call('open_log');else call('open_doc',d)};

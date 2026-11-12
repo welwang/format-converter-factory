@@ -9,7 +9,7 @@ import system_tools as ST
 import file_actions as FA
 
 SETTINGS = os.path.join(E.data_dir(), 'settings.json')
-VERSION = '1.0'
+VERSION = '1.1'
 EDITION = '開源版'
 TITLE = f'四維八德（{EDITION}）'
 DEFAULTS = dict(theme='auto', preset='balanced', out_mode='source', out_dir='', hwaccel=True, fastcopy=True, loudnorm=False, workers=0,
@@ -281,6 +281,11 @@ class Api:
         try: os.startfile(d)
         except Exception: pass
         return d
+    def open_issue(self):
+        # 到 GitHub 提出問題。網址固定寫在這裡：頁面只能要求「開啟回報頁」，不能指定要開哪個網址。
+        try: os.startfile('https://github.com/welwang/format-converter-factory/issues/new/choose')
+        except Exception: return False
+        return True
     def media_info(self, paths):
         """Duration / resolution / HDR for the file lists (video and audio only)."""
         # each probe is a separate ffmpeg process that mostly waits on the disk: run several at once

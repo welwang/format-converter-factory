@@ -208,3 +208,147 @@ details>summary{cursor:pointer;color:var(--tx2);padding:10px 4px;user-select:non
 .hc-ev{font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--tx2);margin-top:6px;word-break:break-word}
 .hc-chart{width:100%;height:auto;display:block}.hc-chart text{font-size:11px;fill:var(--tx2)}
 .hc-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx2);padding:0 16px 12px}.hc-legend b{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+/* ════════════════════════════════════════════════════════════════════════
+   2026 外觀：浮動面板、膠囊控制項、同心圓角、單一強調色。
+   只覆寫上方的外觀規則，不改任何 id／class 與版面結構；刪掉這一段就回到原本的樣子。
+   原則：內容區保持實色與安靜，只有真的疊在內容上的東西（提示、對話框、拖放遮罩）才用半透明材質。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+ --bg:#F2F2F6;--side:#FBFBFD;--card:#FFFFFF;--fill:rgba(118,118,128,.13);--fill2:rgba(118,118,128,.07);
+ --sep:rgba(60,60,67,.11);--tx:#1B1B1F;--tx2:rgba(60,60,67,.66);--tx3:rgba(60,60,67,.38);--sel:rgba(118,118,128,.14);
+ --r:18px;--r-in:11px;--r-out:24px;--gap:10px;
+ --panel:0 0 0 .5px rgba(0,0,0,.07),0 6px 24px rgba(0,0,0,.06);
+ --lift:0 0 0 .5px rgba(0,0,0,.06),0 18px 50px rgba(0,0,0,.16);
+ --glass:rgba(255,255,255,.78);--ring:rgba(0,122,255,.32);--tintbg:rgba(0,122,255,.10)}
+.dark{--bg:#101012;--side:#1A1A1D;--card:#1D1D20;--fill:rgba(120,120,128,.26);--fill2:rgba(120,120,128,.15);--sep:rgba(255,255,255,.085);
+ --tx:#F4F4F6;--tx2:rgba(235,235,245,.62);--tx3:rgba(235,235,245,.32);--sel:rgba(120,120,128,.3);
+ --panel:0 0 0 .5px rgba(255,255,255,.09);--lift:0 0 0 .5px rgba(255,255,255,.12),0 20px 60px rgba(0,0,0,.6);
+ --glass:rgba(38,38,42,.78);--ring:rgba(10,132,255,.42);--tintbg:rgba(10,132,255,.2)}
+body{font-size:14px;letter-spacing:0}
+
+/* ---------- 側邊欄：浮在背景上的一塊面板 ---------- */
+.app{grid-template-columns:254px minmax(0,1fr)}
+.side{margin:var(--gap) 0 var(--gap) var(--gap);border-right:0;border-radius:var(--r-out);box-shadow:var(--panel);overflow:hidden}
+.sb-head{margin:8px 8px 0;padding:10px 10px;border-radius:16px;gap:11px}.sb-head img{width:36px;height:36px}
+.sb-head b{font-size:15px;font-weight:650;letter-spacing:0}.sb-head small{font-size:12px}
+.search{height:36px;border-radius:99px;margin:8px 14px 6px;padding:0 13px;gap:8px}
+.sb-scroll{padding:0 10px 10px}
+.sb-label{font-size:12px;font-weight:600;color:var(--tx2);margin:18px 10px 6px;letter-spacing:0}
+.nav{gap:11px;padding:6px 10px;border-radius:13px;min-height:36px;font-size:14px}
+.nav.on{background:var(--sel)}.nav.on span{font-weight:600}
+.nav .tile{width:22px;height:22px;border-radius:0;background:none!important;box-shadow:none;color:var(--tx2)}
+.nav .tile svg.i{width:20px;height:20px;stroke-width:1.75}.nav.on .tile{color:var(--blue)}
+.nav .cnt{font-size:12px;color:var(--tx3)}
+.sb-foot{border-top:0;padding:8px 14px 14px;gap:10px}.status{padding:0 2px}
+
+/* ---------- 內容區 ---------- */
+.bar{padding:26px 32px 16px;align-items:baseline}
+.bar h1{font-size:30px;font-weight:700;letter-spacing:-.01em}.bar .sub{font-size:14px;padding-bottom:0}
+.bar .tools{align-self:center}
+.page{padding:0 32px 16px}
+.col{gap:26px}
+.group{box-shadow:none}.dark .group{box-shadow:var(--panel)}
+.ghead{font-size:13px;font-weight:600;letter-spacing:0;margin:0 6px 8px}
+.gfoot{font-size:12.5px;margin:8px 6px 0;line-height:1.55}
+.row{min-height:48px;padding:7px 16px;gap:12px}
+.row+.row:before{left:16px;transform:none;background:var(--sep)}.row.ic+.row.ic:before{left:62px}
+.row .lab small{font-size:12.5px}
+.row.on{background:var(--sel)}
+
+/* 圖示方塊：不再一項一個顏色，統一成安靜的底色，強調色只留給目前選取的項目 */
+.tile{box-shadow:none}
+.tlist .tile,.q .tile,#files .tile,#t_list .tile,#wf_list .tile,.pdf-card .tile{background:var(--fill)!important;color:var(--tx);border-radius:10px}
+.tile.md{width:34px;height:34px;border-radius:10px}.tile.md svg.i{width:18px;height:18px;stroke-width:1.75}
+.tlist .row.on .tile{background:var(--blue)!important;color:#fff}
+.thead .tile.lg{width:56px;height:56px;border-radius:16px;background:var(--tintbg)!important;color:var(--blue)}
+.thead h2{font-size:22px;letter-spacing:-.005em}.thead p{font-size:14px}
+
+/* ---------- 控制項：膠囊 ---------- */
+.btn{border-radius:99px;padding:7px 15px;font-weight:550}
+.btn:hover{filter:none;background:rgba(118,118,128,.2)}
+.btn.pri{font-weight:600}.btn.pri:hover{background:var(--blue);filter:brightness(1.06)}
+.btn.tint,.dark .btn.tint{background:var(--fill);color:var(--blue)}.btn.tint:hover{background:rgba(118,118,128,.2)}
+.btn.plain{padding:5px 11px;background:none}.btn.plain:hover{background:var(--fill2)}
+.btn.lg{min-height:48px;padding:0 20px;font-size:15.5px;border-radius:99px}
+.btn.icon{padding:6px;border-radius:50%;background:none}.btn.icon:hover{background:var(--fill)}
+.btn:focus-visible,.nav:focus-visible,.sw:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
+select,input[type=text],input[type=number],input[type=search],input[type=password],input:not([type]),textarea{border-radius:var(--r-in);padding:7px 11px}
+select{padding-right:30px;background-position:right 9px center}
+select:focus,input:focus,textarea:focus{box-shadow:0 0 0 3px var(--ring)}
+textarea{border-radius:16px;padding:12px 14px}
+input[type=search]{background:var(--fill);border:0;outline:none;color:var(--tx);border-radius:99px;padding:7px 14px;min-width:220px}
+.search input{padding:0}
+.seg{border-radius:99px;padding:3px;gap:0}
+.seg button{border-radius:99px;padding:6px 12px;font-size:13.5px;transition:background var(--motion),box-shadow var(--motion)}
+.seg button.on{box-shadow:0 1px 4px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+.sw{width:54px;height:28px}.sw:after{width:32px;height:24px;border-radius:99px;box-shadow:0 2px 6px rgba(0,0,0,.16),0 0 0 .5px rgba(0,0,0,.05)}
+.sw.on:after{left:20px}
+.prog{height:5px}
+.badge{background:var(--fill);color:var(--tx2)}
+kbd{border-radius:6px}
+
+/* ---------- 轉檔頁 ---------- */
+#p-convert{grid-template-columns:minmax(0,1fr) 312px;gap:28px}
+.drop{border:1.5px dashed rgba(118,118,128,.42);border-radius:22px;padding:22px 24px;background:none;gap:18px}
+.drop.on{border-color:var(--blue);background:var(--tintbg)}.drop:hover{border-color:var(--blue)}
+.drop h3{font-size:16px}.drop p{font-size:13px;margin-top:3px}
+.cmain{gap:24px}.insp{gap:22px}
+.uses{gap:8px}
+.uses button.btn,.dark .uses button.btn{background:var(--card);color:var(--tx);border-radius:14px;padding:10px 12px;font-size:13.5px;font-weight:600;line-height:1.3}
+.dark .uses button{box-shadow:var(--panel)}
+.uses button.btn:hover{background:var(--card);box-shadow:0 0 0 1.5px rgba(118,118,128,.35)}
+.uses button small{font-size:12px;margin-top:2px}.uses button.on{outline:0;box-shadow:0 0 0 2px var(--blue)}
+.csum .pill{background:var(--fill)}
+.row .lab small.why{color:var(--tx2)}
+.intent{border:1.5px dashed rgba(118,118,128,.42)}
+.empty{padding:40px 16px;font-size:13.5px}
+
+/* ---------- 工具頁 ---------- */
+#p-tools{grid-template-columns:304px minmax(0,1fr);gap:28px}
+.tlist .row{min-height:58px}.tdetail{gap:24px}
+
+/* ---------- 工作進度：浮動面板 ---------- */
+.activity{margin:0 var(--gap) var(--gap) var(--gap);border-top:0;border-radius:var(--r-out);background:var(--side);box-shadow:var(--panel);overflow:hidden}
+.activity.min{max-height:48px}
+.ahead{padding:8px 14px 8px 12px;min-height:48px}.ahead b{font-size:14px}
+.ahead select{border-radius:99px;padding:4px 28px 4px 11px}
+.queue{padding:0 8px 8px}.q{border-radius:14px;padding:8px 10px;grid-template-columns:34px minmax(0,1fr) auto}
+.q.partial{background:none}
+
+/* ---------- 疊在內容上的東西才用半透明材質 ---------- */
+.modal{background:rgba(0,0,0,.3);backdrop-filter:blur(6px)}
+.sheet{border-radius:26px;padding:22px 24px;box-shadow:var(--lift)}
+.sheet h3{font-size:18px;margin-bottom:14px}
+.toast{background:var(--glass);backdrop-filter:blur(24px) saturate(180%);box-shadow:var(--lift);border-radius:18px;padding:10px 18px;font-size:13.5px}
+.dropov{background:rgba(0,0,0,.12);backdrop-filter:blur(8px)}
+.dropov .box{border:0;border-radius:28px;background:var(--glass);backdrop-filter:blur(24px) saturate(180%);box-shadow:var(--lift);padding:36px 60px}
+.about{padding:32px 32px 24px}.about .ed{color:var(--tx2);background:var(--fill)}
+
+/* ---------- 說明框、PDF 卡片、健康檢查 ---------- */
+.flow-note,.pdf-intro{background:var(--card);border-radius:var(--r);padding:16px 18px;color:var(--tx2)}.pdf-intro b{color:var(--tx)}
+.pdf-card{border:0;border-radius:var(--r);padding:16px;transition:box-shadow var(--motion)}
+.pdf-card:hover{transform:none;box-shadow:0 0 0 1.5px rgba(118,118,128,.35)}
+.dark .pdf-card,.dark .flow-note,.dark .pdf-intro{box-shadow:var(--panel)}
+.pdf-section h2{font-size:13px;font-weight:600;color:var(--tx2);margin:0 6px 10px}
+.pdf-status span{border-radius:99px;padding:4px 11px}
+.pdf-view{border-radius:16px}.pdf-right{border-radius:16px}
+.hc-why button{border-radius:99px;padding:6px 13px}.hc-ans{border-radius:14px}
+details>summary{padding:10px 6px}
+::-webkit-scrollbar{width:9px;height:9px}
+
+/* ---------- 小螢幕（接續上方的斷點，補回被這一段蓋掉的數值） ---------- */
+@media (max-width:1180px){
+ .app{grid-template-columns:72px minmax(0,1fr)}
+ .sb-head{justify-content:center;padding:10px 0;margin:8px 6px 0}.sb-scroll{padding:6px 8px}
+ .nav{justify-content:center;padding:7px 0}.nav .tile{width:24px;height:24px;border-radius:0}
+ #p-convert{grid-template-columns:minmax(0,1fr) 268px;gap:18px}#p-tools{grid-template-columns:248px minmax(0,1fr);gap:18px}
+ .page{padding:0 20px 12px}.bar{padding:18px 20px 12px}
+ .tlist .row{min-height:48px}
+}
+@media (max-height:720px){
+ .bar{padding-top:14px;padding-bottom:10px}.bar h1{font-size:24px}.drop{padding:14px 18px}
+ .row{min-height:40px;padding-top:4px;padding-bottom:4px}.insp{gap:14px}.tdetail{gap:16px}.col{gap:18px}
+ .thead .tile.lg{width:44px;height:44px;border-radius:13px}.thead h2{font-size:18px}
+ .btn.lg{min-height:42px}.nav{min-height:30px}.sb-label{margin-top:12px}.activity.min{max-height:44px}.ahead{min-height:44px}
+}

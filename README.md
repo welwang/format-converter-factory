@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/版本-1.0-2a6bff">
+  <img alt="版本" src="https://img.shields.io/badge/版本-1.1-2a6bff">
   <img alt="平台" src="https://img.shields.io/badge/平台-Windows%2010%20%7C%2011%20x64-0078d4">
   <img alt="授權" src="https://img.shields.io/badge/授權-GPL--3.0%20%2F%20AGPL--3.0-34c759">
   <img alt="離線" src="https://img.shields.io/badge/處理方式-完全本機-ff9500">
@@ -97,7 +97,7 @@
 | 作業系統 | Windows 10 或 Windows 11，64 位元（x64）。32 位元與 Windows 7／8 不支援；ARM64 以 x64 模擬執行，部分硬體加速未驗證。 |
 | 處理器 | 一般文書電腦即可；不需要獨立顯示卡，有的話會自動用來加速影片。 |
 | 記憶體 | 至少 4 GB；建議 8 GB 以上。AI 摘要、翻譯與大型檔案建議 8–16 GB。 |
-| 磁碟空間 | 完整安裝約 5 GB，另需安裝暫存與輸出成品的空間。 |
+| 磁碟空間 | 安裝後約 5 GB，另需安裝暫存與輸出成品的空間。 |
 | 視窗元件 | Microsoft Edge WebView2。Windows 11 與更新過的 Windows 10 已內建；缺少時程式會提示，安裝包也附有離線安裝檔。 |
 | 網路 | 只有網址下載影片與更新下載元件需要。 |
 
@@ -105,10 +105,7 @@
 
 1. 執行 `四維八德_<版本>_離線安裝程式.exe`。
 2. 選擇安裝位置與要建立的捷徑。預設裝在 `%LOCALAPPDATA%\Programs\SiWeiBaDe`，**不需要系統管理員權限**。
-3. 選擇安裝類型：
-   - **完整安裝（建議）**：全部功能。
-   - **精簡安裝**：不含離線 Office（LibreOffice）、電子書轉檔（Calibre）與 WebView2 離線安裝檔，約省 1 GB 磁碟空間。Office／試算表／簡報轉檔、Office→PDF、電子書轉檔不會出現在格式選單；缺 WebView2 的電腦改從網路安裝。之後要用再以「自行選擇」重新安裝加入即可。
-   - **自行選擇**：逐項勾選。
+3. 安裝程式一律安裝全部功能（含離線 Office、電子書轉檔與離線 AI 模型），沒有安裝類型可選。
 4. 可選的附加項目：
    - 建立桌面捷徑
    - 加入檔案總管右鍵「傳送到 → 四維八德」
@@ -409,19 +406,19 @@ PDF 功能全部自行實作，使用本機開源引擎，不呼叫 iLovePDF 或
 <details>
 <summary><b>開啟時提示缺少 WebView2</b></summary>
 
-依提示安裝即可。完整安裝與免安裝版的 `tools\WebView2-offline-x64.exe` 是 Microsoft 的離線安裝檔，沒有網路也能安裝；精簡安裝改用 `tools\MicrosoftEdgeWebview2Setup.exe` 從網路安裝。
+依提示安裝即可。免安裝版的 `tools\WebView2-offline-x64.exe` 是 Microsoft 的離線安裝檔，沒有網路也能安裝；安裝程式為了縮小體積不內含這個檔案（Windows 11 已內建 WebView2），改用 `tools\MicrosoftEdgeWebview2Setup.exe` 從網路安裝。
 </details>
 
 <details>
 <summary><b>啟動時說缺少某個元件</b></summary>
 
-`tools` 資料夾不完整（例如只複製了部分檔案）。請重新安裝，或重新解壓縮完整的免安裝版。精簡安裝沒有選的 Office、電子書與 WebView2 離線安裝檔不算缺少，不會出現這個提示。
+`tools` 資料夾不完整（例如只複製了部分檔案）。請重新安裝，或重新解壓縮完整的免安裝版。安裝程式不內含的 WebView2 離線安裝檔不算缺少，不會出現這個提示。
 </details>
 
 <details>
 <summary><b>轉檔失敗</b></summary>
 
-工作下方會用中文寫出原因，例如磁碟空間不足、檔案正被其他程式開啟、格式有 DRM。修正後按「重試」。詳細記錄在側邊欄最下方的「開啟記錄檔」（`logs\zdgc.log`）。
+工作下方會用中文寫出原因，例如磁碟空間不足、檔案正被其他程式開啟、格式有 DRM。修正後按「重試」。詳細記錄在側邊欄最下方「關於」視窗裡的「記錄檔」（`logs\zdgc.log`）。
 </details>
 
 <details>

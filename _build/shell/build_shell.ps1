@@ -35,6 +35,27 @@ try {
 
     # 3. configure + build
     $build = Join-Path $here 'out\cmake'
+    # 專案資料夾搬過位置後，舊的 CMake 快取還記著原本的路徑，CMake 會拒絕設定。偵測到就清掉快取，從頭設定。
+    $cache = Join-Path $build 'CMakeCache.txt'
+    if (Test-Path -LiteralPath $cache) {
+        $cachedSrc = ''; $cachedDir = ''
+        foreach ($line in [IO.File]::ReadAllLines($cache, [Text.Encoding]::UTF8)) {
+            if ($line.StartsWith('CMAKE_HOME_DIRECTORY:INTERNAL=')) { $cachedSrc = $line.Substring($line.IndexOf('=') + 1) }
+            elseif ($line.StartsWith('CMAKE_CACHEFILE_DIR:INTERNAL=')) { $cachedDir = $line.Substring($line.IndexOf('=') + 1) }
+        }
+        $same = {
+            param($a, $b)
+            $x = ($a -replace '/', '\').Trim().TrimEnd('\')
+            $y = ($b -replace '/', '\').Trim().TrimEnd('\')
+            return [string]::Equals($x, $y, [StringComparison]::OrdinalIgnoreCase)
+        }
+        if (-not (& $same $cachedSrc $here) -or -not (& $same $cachedDir $build)) {
+            $buildAbsolute = [IO.Path]::GetFullPath($build)
+            if (-not $buildAbsolute.StartsWith([IO.Path]::GetFullPath($here) + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'CMake 建置目錄超出本次建置目錄' }
+            Log "CMake 快取是在別的位置建立的（$cachedSrc），清除後重新設定…"
+            Remove-Item -LiteralPath $buildAbsolute -Recurse -Force
+        }
+    }
     Log '設定 CMake…'
     & $cmake -S $here -B $build "-DSWBD_WEBVIEW2_SDK=$sdk" 2>&1 | Add-Content -LiteralPath $log -Encoding UTF8
     if ($LASTEXITCODE -ne 0) { throw "CMake 設定失敗，詳細訊息在 $log" }
